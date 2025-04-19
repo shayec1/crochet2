@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>像素畫工具 - 支援滾輪縮放</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 20px;
+      font-family: sans-serif;
+    }
+
+    .toolbar {
+      margin-bottom: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .grid-container {
+      overflow: auto;
+      border: 1px solid #ccc;
+      width: 80vw;
+      height: 80vh;
+    }
+
+    .grid {
+      display: grid;
+      gap: 1px;
+      touch-action: none;
+      transform-origin: top left;
+    }
+
+    .cell {
+      background-color: white;
+      border: 1px solid #ccc;
+    }
+
+    button, input {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
+
+    .palette {
+      display: flex;
+      gap: 5px;
+    }
+
+    .palette div {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      border: 1px solid #999;
+    }
+
+    input[type=number] {
+      width: 60px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <label>顏色選擇器: <input type="color" id="colorPicker" value="#000000"></label>
+    <div class="palette" id="palette"></div>
+    <label>列數: <input type="number" id="rows" value="16" min="1"></label>
+    <label>行數: <input type="number" id="cols" value="16" min="1"></label>
+    <button id="generateGrid">生成畫布</button>
+    <button id="eraseBtn">橡皮擦</button>
+    <button id="saveBtn">保存為圖片</button>
+  </div>
+
+  <div class="grid-container">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <canvas id="canvas" width="640" height="640" style="display: none;"></canvas>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const colorPicker = document.getElementById('colorPicker');
+    const palette = document.getElementById('palette');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const rowsInput = document.getElementById('rows');
+    const colsInput = document.getElementById('cols');
+    const generateGridBtn = document.getElementById('generateGrid');
+    const eraseBtn = document.getElementById('eraseBtn');
+    const saveBtn = document.getElementById('saveBtn');
+
+    const predefinedColors = ['#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#808080'];
+
+    predefinedColors.forEach(color => {
+      const swatch = document.createElement('div');
+      swatch.style.backgroundColor = color;
+      swatch.addEventListener('click', () => {
+        colorPicker.value = color;
+      });
+      palette.appendChild(swatch);
+    });
+
+    let isErasing = false;
+    let cellSize = 20;
+    let zoomLevel = 1;
+
+    function createGrid(rows, cols) {
+      grid.innerHTML = '';
+      grid.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+      grid.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
+      canvas.width = cols * cellSize;
+      canvas.height = rows * cellSize;
+
+      for (let i = 0; i < rows * cols; i++) {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        cell.style.width = `${cellSize}px`;
+        cell.style.height = `${cellSize}px`;
+        grid.appendChild(cell);
+      }
+    }
+
+    function paintCell(cell) {
+      if (isErasing) {
+        cell.style.backgroundColor = 'white';
+      } else {
+        cell.style.backgroundColor = colorPicker.value;
+      }
+    }
+
+    let isDrawing = false;
+
+    grid.addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('cell')) {
+        isDrawing = true;
+        paintCell(e.target);
+      }
+    });
+
+    grid.addEventListener('mousemove', (e) => {
+      if (isDrawing && e.target.classList.contains('cell')) {
+        paintCell(e.target);
+      }
+    });
+
+    grid.addEventListener('mouseup', () => isDrawing = false);
+    grid.addEventListener('mouseleave', () => isDrawing = false);
+
+    grid.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (target && target.classList.contains('cell')) {
+        paintCell(target);
+      }
+    });
+
+    grid.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (target && target.classList.contains('cell')) {
+        paintCell(target);
+      }
+    });
+
+    eraseBtn.addEventListener('click', () => {
+      isErasing = !isErasing;
+      eraseBtn.innerText = isErasing ? '切換為畫筆' : '切換為橡皮擦';
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const rows = parseInt(rowsInput.value);
+      const cols = parseInt(colsInput.value);
+      const cells = document.querySelectorAll('.cell');
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const color = cells[row * cols + col].style.backgroundColor || 'white';
+          ctx.fillStyle = color;
+          ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+        }
+      }
+
+      const link = document.createElement('a');
+      link.download = 'pixel-art.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    });
+
+    generateGridBtn.addEventListener('click', () => {
+      const rows = parseInt(rowsInput.value);
+      const cols = parseInt(colsInput.value);
+      createGrid(rows, cols);
+    });
+
+    // Zoom with mouse wheel
+    grid.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomLevel += e.deltaY < 0 ? 0.1 : -0.1;
+      zoomLevel = Math.max(0.2, Math.min(zoomLevel, 4));
+      grid.style.transform = `scale(${zoomLevel})`;
+    });
+
+    // 初始化
+    createGrid(16, 16);
+  
+    // 拖动画布功能
+    let isPanning = false;
+    let startX, startY, originX = 0, originY = 0;
+
+    const gridContainer = document.querySelector('.grid-container');
+
+    gridContainer.addEventListener('mousedown', (e) => {
+      if (e.target === gridContainer) {
+        isPanning = true;
+        startX = e.clientX - originX;
+        startY = e.clientY - originY;
+      }
+    });
+
+    gridContainer.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        originX = e.clientX - startX;
+        originY = e.clientY - startY;
+        grid.style.transform = `translate(${originX}px, ${originY}px) scale(${zoomLevel})`;
+      }
+    });
+
+    gridContainer.addEventListener('mouseup', () => isPanning = false);
+    gridContainer.addEventListener('mouseleave', () => isPanning = false);
+
+    gridContainer.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const prevZoom = zoomLevel;
+      zoomLevel += e.deltaY < 0 ? 0.1 : -0.1;
+      zoomLevel = Math.max(0.2, Math.min(zoomLevel, 4));
+
+      const rect = grid.getBoundingClientRect();
+      const dx = e.clientX - rect.left;
+      const dy = e.clientY - rect.top;
+
+      originX = originX - (dx * (zoomLevel - prevZoom));
+      originY = originY - (dy * (zoomLevel - prevZoom));
+
+      grid.style.transform = `translate(${originX}px, ${originY}px) scale(${zoomLevel})`;
+    });
+
+    // 初始化缩放位置
+    grid.style.transform = `translate(0px, 0px) scale(1)`;
+    
+</script>
+
+</body>
+</html>
