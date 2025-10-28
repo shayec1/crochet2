@@ -1,0 +1,352 @@
+extends Interactable
+
+@export var dialogue_file: String = "res://dialogues/earphone_dialogue.dialogue"  # 🔥
+@export var target_scene: String = "res://bar.tscn"
+@export var item_name: String = "earphone"  # 🔥
+
+var midnight_shown: bool = false
+var dialogue_label = null
+var is_popup_visible: bool = false
+var dialogue_has_ended: bool = false
+var dialogue_started: bool = false  # 🆕 防止重复触发对话
+var original_position: Vector2
+var original_scale: Vector2
+var original_z_index: int
+
+func _ready() -> void:
+	dialogue_file = "res://dialogues/earphone_dialogue.dialogue"  # 🔥
+	prompt_text = "🎧 查看耳机"  # 🔥
+	
+	super()
+	
+	enable_hover_hint = false
+	if prompt_label:
+		prompt_label.visible = false
+		prompt_label.queue_free()
+	
+	original_position = position
+	original_scale = scale
+	original_z_index = z_index
+	
+	modulate.a = 0.0
+	visible = false
+
+func _trigger_interact() -> void:
+	if is_interacting:
+		return
+	
+	# 🔥 如果对话已经结束，不再触发
+	if dialogue_has_ended:
+		print("⚠️ " + item_name + " 对话已完成，不再触发")
+		return
+	
+	# 🔥 如果对话已经开始，不再触发
+	if dialogue_started:
+		print("⚠️ " + item_name + " 对话进行中，不再触发")
+		return
+	
+	is_interacting = true
+	
+	bring_to_front()
+	hide_other_item()
+	
+	_on_interact()
+	_unlock_after_delay()
+
+func _unlock_after_delay() -> void:
+	await get_tree().create_timer(0.2).timeout
+	is_interacting = false
+
+func bring_to_front():
+	z_index = 100
+	print("📱 " + item_name + " 置于最前")
+
+func hide_other_item():
+	var other_item_name = "earphone" if item_name == "phone" else "phone"
+	var world = get_node_or_null("/root/world")
+	if world:
+		var other_item = world.find_node_recursive(world, other_item_name)
+		if other_item and other_item.has_method("fade_out_temporarily"):
+			other_item.fade_out_temporarily()
+			print("🔇 隐藏 " + other_item_name)
+
+func fade_out_temporarily():
+	var tween = create_tween()
+	tween.tween_property(self, "modulate:a", 0.2, 0.3)
+
+func restore_visibility():
+	if is_popup_visible and not dialogue_started:
+		var tween = create_tween()
+		tween.tween_property(self, "modulate:a", 1.0, 0.3)
+
+func show_popup():
+	if is_popup_visible:
+		return
+	
+	is_popup_visible = true
+	dialogue_has_ended = false
+	dialogue_started = false  # 🆕 重置
+	visible = true
+	
+	print("📱 " + item_name + " 弹出动画开始...")
+	
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	tween.tween_property(self, "modulate:a", 1.0, 0.3)
+	
+	scale = original_scale * 0.5
+	tween.tween_property(self, "scale", original_scale, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	
+	await tween.finished
+	
+	shake_item()
+
+func shake_item():
+	print("📳 " + item_name + " 震动中...")
+	
+	var shake_count = 6
+	var shake_intensity = 8.0
+	var shake_duration = 0.05
+	
+	for i in range(shake_count):
+		var tween = create_tween()
+		
+		var offset = Vector2(
+			randf_range(-shake_intensity, shake_intensity),
+			randf_range(-shake_intensity, shake_intensity)
+		)
+		
+		tween.tween_property(self, "position", original_position + offset, shake_duration)
+		await tween.finished
+	
+	var tween = create_tween()
+	tween.tween_property(self, "position", original_position, 0.1)
+	await tween.finished
+	
+	print("✓ 震动完成")
+
+func _input(event: InputEvent) -> void:
+	if not is_popup_visible:
+		return
+	
+	if not dialogue_has_ended:
+		return
+	
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			hide_item()
+
+func hide_item():
+	if not is_popup_visible:
+		return
+	
+	print("📱 " + item_name + " 淡出...")
+	
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	tween.tween_property(self, "modulate:a", 0.0, 0.5)
+	tween.tween_property(self, "scale", original_scale * 0.8, 0.5)
+	
+	await tween.finished
+	
+	visible = false
+	is_popup_visible = false
+	z_index = original_z_index
+	
+	restore_other_item()
+	
+	var world = get_node_or_null("/root/world")
+	if world and world.has_method("check_all_items_hidden"):
+		world.check_all_items_hidden()
+	
+	print("✓ " + item_name + " 已隐藏")
+
+func restore_other_item():
+	var other_item_name = "earphone" if item_name == "phone" else "phone"
+	var world = get_node_or_null("/root/world")
+	if world:
+		var other_item = world.find_node_recursive(world, other_item_name)
+		if other_item and other_item.has_method("restore_visibility"):
+			other_item.restore_visibility()
+			print("🔊 恢复 " + other_item_name + " 显示")
+
+func _on_interact() -> void:
+	print("\n==================================================")
+	print(">>> " + item_name + " 被点击 <<<")
+	print("==================================================")
+	
+	midnight_shown = false
+	dialogue_has_ended = false
+	dialogue_started = true  # 🆕 标记对话已开始
+	show_dialogue()
+
+func show_dialogue() -> void:
+	print("  [1] 开始显示对话...")
+	
+	if not is_instance_valid(DialogueManager):
+		print("  ❌ DialogueManager 不存在")
+		return
+	
+	if not FileAccess.file_exists(dialogue_file):
+		print("  ❌ 对话文件不存在")
+		return
+	
+	var dialogue_resource = load(dialogue_file)
+	if dialogue_resource == null:
+		print("  ❌ 无法加载对话")
+		return
+	
+	print("  [2] 对话资源加载成功")
+	
+	var balloon = DialogueManager.show_example_dialogue_balloon(dialogue_resource, "start")
+	
+	if balloon:
+		print("  [3] 对话容器已创建")
+		
+		print("\n🔍 搜索对话控制器...")
+		find_dialogue_controller(balloon)
+		
+		print("\n🔍 连接 DialogueManager 全局信号...")
+		
+		if DialogueManager.has_signal("dialogue_ended"):
+			# 🔥 断开之前的连接，避免重复
+			if DialogueManager.dialogue_ended.is_connected(_on_dialogue_ended):
+				DialogueManager.dialogue_ended.disconnect(_on_dialogue_ended)
+			DialogueManager.dialogue_ended.connect(_on_dialogue_ended)
+			print("  ✓ 已连接 DialogueManager.dialogue_ended")
+		
+		if DialogueManager.has_signal("passed"):
+			if DialogueManager.passed.is_connected(_on_dialogue_passed):
+				DialogueManager.passed.disconnect(_on_dialogue_passed)
+			DialogueManager.passed.connect(_on_dialogue_passed)
+			print("  ✓ 已连接 DialogueManager.passed")
+		
+		print("\n🔍 启动文本监听...")
+		start_dialogue_monitor()
+		
+		print("\n  [4] 等待玩家选择...\n")
+
+func find_dialogue_controller(node: Node, depth: int = 0):
+	var indent = "  ".repeat(depth)
+	
+	for sig in node.get_signal_list():
+		var sig_name = sig.name
+		if "response" in sig_name or "action" in sig_name or "dialogue" in sig_name:
+			
+			if sig_name == "response_selected" and not node.response_selected.is_connected(_on_response_selected):
+				node.response_selected.connect(_on_response_selected)
+			
+			if sig_name == "actioned" and not node.actioned.is_connected(_on_actioned):
+				node.actioned.connect(_on_actioned)
+			
+			if sig_name == "dialogue_ended" and not node.dialogue_ended.is_connected(_on_dialogue_ended):
+				node.dialogue_ended.connect(_on_dialogue_ended)
+	
+	for child in node.get_children():
+		find_dialogue_controller(child, depth + 1)
+
+func start_dialogue_monitor():
+	var timer = Timer.new()
+	timer.wait_time = 0.1
+	timer.timeout.connect(_check_dialogue_content)
+	add_child(timer)
+	timer.start()
+	
+	await get_tree().create_timer(10.0).timeout
+	if is_instance_valid(timer):
+		timer.stop()
+		timer.queue_free()
+
+func _check_dialogue_content():
+	var root = get_tree().root
+	var labels = find_all_labels(root)
+	
+	for label in labels:
+		if label.visible and label.text != "":
+			var text = label.text
+			
+			if ("钟声响起" in text or "扭曲" in text or "眩晕" in text) and not midnight_shown:
+				midnight_shown = true
+				print("\n✓✓✓ 通过文本检测到 midnight 内容！")
+				print("  检测到的文字: " + text.substr(0, min(50, text.length())))
+
+func find_all_labels(node: Node) -> Array:
+	var labels = []
+	
+	if node is Label or node is RichTextLabel:
+		labels.append(node)
+	
+	for child in node.get_children():
+		labels.append_array(find_all_labels(child))
+	
+	return labels
+
+func _on_response_selected(response):
+	print("\n🎯 response_selected 触发！")
+	print("  数据: " + str(response))
+	
+	if typeof(response) == TYPE_DICTIONARY and response.has("text"):
+		var text = str(response.text)
+		if "午夜" in text or "12点" in text:
+			midnight_shown = true
+			print("  ✓✓✓ 检测到 midnight 选项！")
+
+func _on_actioned(action):
+	print("\n⚡ actioned 触发！")
+	print("  数据: " + str(action))
+	
+	if typeof(action) == TYPE_DICTIONARY:
+		if action.has("next_id") and str(action.next_id) == "midnight":
+			midnight_shown = true
+			print("  ✓✓✓ 检测到 midnight 节点！")
+
+func _on_dialogue_passed(data):
+	print("\n🎲 passed 触发！")
+	print("  数据: " + str(data))
+
+func _on_dialogue_ended(resource):
+	print("\n📕 " + item_name + " 对话结束！")
+	print("  midnight_shown = " + str(midnight_shown))
+	
+	dialogue_has_ended = true
+	dialogue_started = false  # 🆕 对话结束，可以再次触发
+	
+	z_index = original_z_index
+	restore_other_item()
+	
+	# 🔥 通知 world 标记这个物品的对话已完成
+	var world = get_node_or_null("/root/world")
+	if world and world.has_method("mark_dialogue_completed"):
+		world.mark_dialogue_completed(item_name)
+	
+	if midnight_shown:
+		print("  ✓ 将切换场景")
+		await get_tree().create_timer(0.5).timeout
+		change_scene()
+	else:
+		print("  → 保持当前场景")
+		print("  💡 提示：现在可以点击屏幕任意处隐藏物品")
+
+func change_scene():
+	print("\n🎬 开始切换场景到: " + target_scene)
+	
+	if not FileAccess.file_exists(target_scene):
+		print("❌ 场景文件不存在")
+		return
+	
+	var fade = ColorRect.new()
+	fade.color = Color.BLACK
+	fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	get_tree().root.add_child(fade)
+	fade.modulate.a = 0.0
+	
+	var tween = create_tween()
+	tween.tween_property(fade, "modulate:a", 1.0, 1.0)
+	await tween.finished
+	
+	print("切换场景...")
+	get_tree().change_scene_to_file(target_scene)
+	print("✓ 完成")
