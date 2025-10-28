@@ -1,0 +1,168 @@
+extends Node2D
+
+var phone_popup_triggered: bool = false
+var items_popup_active: bool = false
+var phone_dialogue_completed: bool = false  # 🆕 phone 对话是否完成
+var earphone_dialogue_completed: bool = false  # 🆕 earphone 对话是否完成
+
+func _ready():
+	print("\n🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟")
+	print("🌟 主场景 _ready() 执行")
+	print("🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟")
+	
+	print("\n📋 场景树结构:")
+	print_tree_recursive(self, 0)
+	
+	print("\n🔍 查找背景节点:")
+	var far_bg = get_node_or_null("FarBackground")
+	if far_bg:
+		print("  ✓ 找到 FarBackground")
+		print("    脚本: " + str(far_bg.get_script()))
+		print("    is_processing: " + str(far_bg.is_processing()))
+		print("    is_node_ready: " + str(far_bg.is_node_ready()))
+		print("    子节点数: " + str(far_bg.get_child_count()))
+	else:
+		print("  ❌ 找不到 FarBackground！")
+	
+	var mid_bg = get_node_or_null("MidBackground")
+	if mid_bg:
+		print("  ✓ 找到 MidBackground")
+	else:
+		print("  ❌ 找不到 MidBackground！")
+	
+	var near_bg = get_node_or_null("NearBackground")
+	if near_bg:
+		print("  ✓ 找到 NearBackground")
+	else:
+		print("  ❌ 找不到 NearBackground！")
+	
+	print("\n🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟\n")
+	
+	# 5秒后同时触发两个物品弹出
+	await get_tree().create_timer(5.0).timeout
+	trigger_items_popup()
+
+func print_tree_recursive(node: Node, level: int):
+	var indent = ""
+	for i in range(level):
+		indent += "  "
+	
+	var script_info = ""
+	if node.get_script():
+		script_info = " [脚本: " + str(node.get_script().resource_path) + "]"
+	
+	print(indent + "├─ " + node.name + " (" + node.get_class() + ")" + script_info)
+	
+	for child in node.get_children():
+		print_tree_recursive(child, level + 1)
+
+func trigger_items_popup():
+	if phone_popup_triggered:
+		return
+	
+	phone_popup_triggered = true
+	items_popup_active = true
+	phone_dialogue_completed = false
+	earphone_dialogue_completed = false
+	
+	print("\n📱🎧 触发物品弹出动画...")
+	
+	var phone = find_node_recursive(self, "phone")
+	var earphone = find_node_recursive(self, "earphone")
+	
+	print("🔍 查找结果:")
+	print("  phone: " + (str(phone.get_path()) if phone else "未找到"))
+	print("  earphone: " + (str(earphone.get_path()) if earphone else "未找到"))
+	
+	if phone == null:
+		print("❌ 找不到 phone 节点！")
+	
+	if earphone == null:
+		print("❌ 找不到 earphone 节点！")
+		return
+	
+	dim_backgrounds()
+	
+	if phone and phone.has_method("show_popup"):
+		phone.show_popup()
+	
+	if earphone and earphone.has_method("show_popup"):
+		earphone.show_popup()
+
+func find_node_recursive(node: Node, node_name: String) -> Node:
+	if node.name == node_name:
+		return node
+	
+	for child in node.get_children():
+		var result = find_node_recursive(child, node_name)
+		if result:
+			return result
+	
+	return null
+
+func dim_backgrounds():
+	print("🌑 降低背景饱和度和透明度...")
+	
+	var backgrounds = [
+		get_node_or_null("FarBackground"),
+		get_node_or_null("MidBackground"),
+		get_node_or_null("NearBackground")
+	]
+	
+	for bg in backgrounds:
+		if bg:
+			var tween = create_tween()
+			tween.set_parallel(true)
+			tween.tween_property(bg, "modulate:a", 0.5, 0.5)
+			tween.tween_property(bg, "modulate", Color(0.5, 0.5, 0.5, 0.5), 0.5)
+
+# 🔥 只有两个对话都完成才恢复背景
+func restore_backgrounds():
+	print("\n🔍 检查背景恢复条件:")
+	print("  phone 对话完成: " + str(phone_dialogue_completed))
+	print("  earphone 对话完成: " + str(earphone_dialogue_completed))
+	
+	# 🔥 关键：必须两个都完成才恢复
+	if phone_dialogue_completed and earphone_dialogue_completed:
+		print("✓ 两个对话都已完成，恢复背景！")
+		
+		var backgrounds = [
+			get_node_or_null("FarBackground"),
+			get_node_or_null("MidBackground"),
+			get_node_or_null("NearBackground")
+		]
+		
+		for bg in backgrounds:
+			if bg:
+				var tween = create_tween()
+				tween.tween_property(bg, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.5)
+		
+		items_popup_active = false
+	else:
+		print("⏳ 等待另一个物品的对话完成...")
+
+# 🆕 标记某个物品的对话已完成
+func mark_dialogue_completed(item_name: String):
+	print("\n📝 标记对话完成: " + item_name)
+	
+	if item_name == "phone":
+		phone_dialogue_completed = true
+	elif item_name == "earphone":
+		earphone_dialogue_completed = true
+	
+	# 尝试恢复背景
+	restore_backgrounds()
+
+func check_all_items_hidden():
+	var phone = find_node_recursive(self, "phone")
+	var earphone = find_node_recursive(self, "earphone")
+	
+	var phone_hidden = phone == null or not phone.is_popup_visible
+	var earphone_hidden = earphone == null or not earphone.is_popup_visible
+	
+	print("🔍 检查物品状态:")
+	print("  phone 隐藏: " + str(phone_hidden))
+	print("  earphone 隐藏: " + str(earphone_hidden))
+	
+	if phone_hidden and earphone_hidden:
+		print("✓ 所有物品已隐藏")
