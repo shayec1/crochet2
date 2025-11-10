@@ -1,0 +1,225 @@
+extends SceneBase
+
+# ==================== 初始化场景数据 ====================
+
+func _init():
+	scene_name = "yaki_bar"
+	
+	# 对话数据
+	var v1_dialogues: Array[String] = [
+		"You choose to come to your favorite bar in the past year.",
+		"You've spent lots of weekend nights here, and always alone.",
+		"You can't even remember how many times you've visited before.",
+		"They serve tapas with nice wine, that kind of thing that could merely counted as appetizer.",
+		"Everyone sits around the bar and chatting with Yaki, of course, the owner of this small, warm and chilling place.",
+		"You've never talk with him too much, but he already know what is on your order list.",
+		"You've been ordering the same thing for a year now.",
+		"Same dish, same drink, even the same seat, every single time.",
+		"\"Still the same with last time? Onigiri with chilled red wine?\""
+	]
+	
+	dialogue_data_versions = [v1_dialogues, [], []]
+	
+	# ===== 主选择数据（2个平级选择）=====
+	choice_data_versions = [
+		[
+			{
+				"text": "Onigiri with chilled red wine",
+				"effects": {"P1": 1},
+				"next_dialogue": """
+			Sure, you still want the same dish as always.
+			
+			The subtle balance in this gentle comfort food is always the simplest happiness for you after work. You listen to the playlist and catch a few words between staffs. No big different from any other day here. These remains you about the unchanging things in your life. The everyday facetime, your apartment and your cat.
+			
+			Do you want to stick to things you always do every day or today is the chance for new experience?
+			""",
+			},
+			{
+				"text": "Sancho Crisps with sweet wine",
+				"effects": {"O1": 1},
+				"next_dialogue": """
+			"Feeling adventurous today?"
+			
+			Yaki smiles and asks you the question.
+			""",
+			}
+		],
+		[], []
+	]
+
+# ===== Sancho的子选择（2个）=====
+var sancho_sub_choices = [
+	{
+		"text": "Say something",
+		"effects": {"O2": 1},
+		"next_dialogue": """
+"Not really, just felt like switching things up."
+"No problem.
+This drink's on me. Thanks for coming so often."
+
+Something stirs in you. You've always thought you lived along because you rarely talked to people and rarely cared what they thought.
+But maybe your life isn't as bad as you think?
+
+Maybe you should talk to others more often?
+""",
+	},
+	{
+		"text": "Say nothing",
+		"effects": {"P1": 1},
+		"next_dialogue": """
+"I'm moving soon so I want to try something different."
+"Really? Are you moving away?"
+"Yaki was little surprised about what you said."
+"Yeah. I thought I'd give other dishes a shot."
+
+You think better not to tell him the truth. After all you two are not friends. You like the atmosphere and the food here, that's all and that's enough. You of course have wondered what the other dishes on the blackboard taste like and today is a good chance for trying something new.
+
+"No problem. This drink's on me."
+Now it's your turn to feel surprised.
+
+The new dish and the wine both hit the spot. It makes you wonder maybe you should try something new?
+At least don't spend the whole night crawled in bed.
+""",
+	}
+]
+
+# ===== Big Choice（4个最终场景）=====
+var big_choices = [
+	{
+		"text": "Facetime with parents?",
+		"effects": {},
+		"next_scene": "parents",
+		"next_dialogue": "Call your parents and share your feelings."
+	},
+	{
+		"text": "Your apartment?",
+		"effects": {},
+		"next_scene": "apartment",
+		"next_dialogue": "Return to your apartment and spend time with your cat."
+	},
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside",
+		"next_dialogue": "Take a walk by the sea to clear your mind."
+	},
+	{
+		"text": "Maybe visit a friend?",
+		"effects": {},
+		"next_scene": "friend_house",
+		"next_dialogue": "Visit your friend and catch up."
+	}
+]
+
+# ==================== 图片路径映射 ====================
+
+func get_choice_image_path(choice_text: String) -> String:
+	"""返回选项图片路径"""
+	var text_lower = choice_text.to_lower()
+	
+	var image_map = {
+		"onigiri": "res://assets/choices/yaki_bar/yaki_bar_onigiri.PNG",
+		"sancho": "res://assets/choices/yaki_bar/yaki_bar_sanchocrisps.PNG",
+		"say something": "res://assets/choices/yaki_bar/yaki_bar_saysomething.PNG",
+		"say nothing": "res://assets/choices/yaki_bar/yaki_bar_saynothing.PNG",
+		"parents": "res://opening/parents_opening.png",
+		"apartment": "res://opening/apartment_opening.png",
+		"seaside": "res://opening/seaside_opening.png",
+		"friend": "res://opening/friend_opening.png"
+	}
+	
+	for key in image_map:
+		if key in text_lower:
+			var path = image_map[key]
+			print("  → Matched key '%s', path: %s" % [key, path])
+			print("  → File exists: ", ResourceLoader.exists(path))
+			return path
+	
+	print("  → NO MATCH for text: ", choice_text)
+	return "res://icon.png"
+
+# ==================== 核心逻辑 ====================
+
+func _on_choice_input_event(viewport, event: InputEvent, shape_idx, choice_data_item: Dictionary):
+	"""处理所有选择的点击"""
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# 只有IDLE状态才能点击
+		if choice_state != ChoiceState.IDLE:
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		print("\n=== CLICKED: ", choice_data_item.get("text", ""), " ===")
+		
+		# 1. 应用分数效果
+		if choice_data_item.has("effects"):
+			for stat in choice_data_item.effects:
+				if GM.stats.has(stat):
+					GM.stats[stat] += choice_data_item.effects[stat]
+					print("[Stats] %s: %+d" % [stat, choice_data_item.effects[stat]])
+		
+		# 2. 隐藏选择容器
+		choice_container.visible = false
+		choice_state = ChoiceState.CHOICE_MADE
+		
+		# 3. 检查是否是最终跳转（Big Choice的选择）
+		var next_scene = choice_data_item.get("next_scene", "")
+		if next_scene in ["parents", "apartment", "seaside", "friend_house"]:
+			print("→ Final jump to: ", next_scene)
+			GM.make_choice(choice_data_item)
+			return
+		
+		# 4. 判断下一步显示什么
+		var clicked_text = choice_data_item.get("text", "")
+		
+		if "Onigiri" in clicked_text:
+			# Onigiri → 直接显示Big Choice
+			print("→ Onigiri path: show Big Choice")
+			_show_big_choices()
+			
+		elif "Sancho" in clicked_text:
+			# Sancho → 显示子选择
+			print("→ Sancho path: show sub choices")
+			_show_sub_choices()
+			
+		elif "Say something" in clicked_text or "Say nothing" in clicked_text:
+			# 子选择 → 显示Big Choice
+			print("→ Sub choice path: show Big Choice")
+			_show_big_choices()
+
+# ==================== 显示不同层级的选择 ====================
+
+func _show_sub_choices():
+	"""显示Sancho的子选择（2个）"""
+	print("\n[Sub Choices] Showing 2 choices")
+	
+	# 替换choice_data
+	choice_data = sancho_sub_choices
+	
+	# 重置状态
+	choice_state = ChoiceState.IDLE
+	
+	# 调用父类显示
+	super._show_choices()
+	
+	print("[Sub Choices] Done. Container visible: ", choice_container.visible)
+
+func _show_big_choices():
+	"""显示Big Choice（4个场景）"""
+	print("\n[Big Choice] Showing 4 choices")
+	
+	# 替换choice_data
+	choice_data = big_choices
+	
+	# 重置状态
+	choice_state = ChoiceState.IDLE
+	
+	# 调用父类显示
+	# 父类的 super._show_choices() 会根据 choice_data 数组来决定哪些 choice_nodes 可见。
+	super._show_choices()
+	
+	# *** 已移除手动调整位置的代码块 ***
+	# 节点将保持其在 2D 场景编辑器中配置的位置。
+	
+	print("[Big Choice] Done. Container visible: ", choice_container.visible)
