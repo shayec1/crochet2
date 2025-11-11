@@ -1,0 +1,641 @@
+extends SceneBase
+
+# ==================== Hover 状态管理 ====================
+var is_in_hover_preview = false
+var hover_preview_segments: Array = []
+var hover_current_segment = 0
+var hovered_choice_label: Label = null
+var hovered_choice_image: Sprite2D = null
+var hover_typing_finished = false
+var showing_transition = false
+var choice_dialogue_finished = false
+
+# ==================== 初始化场景数据 ====================
+
+func _init():
+	scene_name = "apartment"
+	
+	# ==================== V1 对话数据 ====================
+	var v1_dialogues: Array[String] = [
+		"""After a long day, you finally return to your apartment. Your cat Hazel darts over to greet you as soon as you open the door. """,
+
+		"""You name her as Hazel because she has the gorgeous tortoiseshell fur, it reminds you the hazelnut in your hometown.
+
+Your apartment isn't big, and you don't like clutter anyway.""",
+
+		"""You prefer everything neatly arranged.
+		
+Besides, your cat is too naughty. Thanks to Hazel, anything left on the counter will end up on the floor, so you've learned your lesson.
+
+You don't like turning on the main light. The soft glow of your desk lamp is enough. You hear the kettle boiling.""",
+
+		"""You pour yourself a cup of hot water, grab chips and sit back at your desk.
+		
+It's your zoning out time."""
+	]
+
+	# ==================== V2 对话数据 ====================
+	var v2_dialogues: Array[String] = [
+		"""You're not quite sure where you've just come back from, maybe you just woke up from a nap. Either way, it doesn't matter.
+		
+The sky outside is pitch-black now and it's been like that for hours.
+
+That's wintertime magic for you and honestly, you hate how early darkness comes.""",
+
+		"""Still, you choose not to turn on the lights.
+		
+You know your habits are strange but you take pride in them. You stare at the ceiling and suddenly, you hear a voice.""",
+
+		""""Finally remembered me? You've been lying in bed forever.",
+
+"Aren't you supposed to be working at your desk till you pass out, then jolting awake the next morning to your alarm?"
+
+"Must be a hallucination." You think. Ceiling of course can't talk.
+
+Or maybe it's just you talking to yourself again. But who is that?"""
+	]
+	
+	# ==================== V3 对话数据 ====================
+	var v3_dialogues: Array[String] = [
+		"""Long stays at home never bother you. As a real homebody, you could happily stay indoors forever.
+		
+Hazel sleeps soundly beside you. You lower the volume on your speaker, scroll through your phone, and notice your favorite tattoo artist has just posted a new flash design.
+
+"This looks amazing… I want another tattoo.""",
+
+		"""Tattoos have always been your way to cope from those reality.
+		
+It's your way to deal with everything. Or maybe not deal with problems but feel them.
+
+You love the sting of the needle because that reminds you that you're still alive. Beautiful flashes and clean lines always lift your mood, especially on days when you feel low.""",
+
+		"""You used to chase deep meanings behind each tattoo, but now your arms are already covered with patterns and symbols.
+
+Some of them are coloured while some of them are black and white.
+
+Does any of it still have meaning to you?"""
+	]
+	
+	dialogue_data_versions = [v1_dialogues, v2_dialogues, v3_dialogues]
+	
+	# ==================== V1 选择数据（小选择）====================
+	var v1_choices = [
+		{
+			"text": "Let Hazel in",
+			"effects": {"O2": 1},
+			"next_dialogue": [
+				"""\"Meow\"
+
+Hazel is meowing outside the door to remind you she wants to play.
+
+You don't always have the energy for it, but for the sake of a peaceful sleep at night, you let her in your room anyway.""",
+
+				"""Her favorite toy is the laser pointer.
+				
+You watch her leap and chase the red dot with full of energy, you can't even remember the last time you had that kind of spark.
+
+As she purrs and sprawls out on the floor, you catch yourself smiling. Sometimes she's noisy, yes.""",
+
+				"""But it's those moments like this that remind you you're not truly alone.
+				
+You're two small beings keeping each other company in this little world. She lies down, but her eyes are still glimmering."""
+			]
+		},
+		{
+			"text": "Browsing your phone time",
+			"effects": {"P1": 1},
+			"next_dialogue": [
+				"""You lie on the bed again""",
+
+				"""After you get Hazel new food, change her water bowl, leave her toys by the door, and close your bedroom behind you.""",
+
+				"""You are scrolling aimlessly. The content is boring too.
+
+To be honest, you don't really care much for politics though people might criticize you for saying that.
+
+But your point is how can I take on the world's tragedies while I can barely handle my own life?""",
+
+				"""Of course, you care about wars and suffering around the world.
+
+The images of children on the news break your heart every time and that heartbreak makes you lose faith.
+
+Eventually, you just stopped browsing."""
+			]
+		}
+	]
+	
+	# ==================== V2 选择数据（小选择）====================
+	var v2_choices = [
+		{
+			"text": "My ceiling???",
+			"effects": {"O1": 1},
+			"next_dialogue": [
+				""""My ceiling can talk? My ceiling can talk?! That's so cool." Wait — does that mean it's been watching me all along?""",
+
+				""""I haven't," Ceiling answers. "I can only hear your voice, not see your world.
+
+You exhale in relief. Talking to the ceiling feels effortless because you don't even have to speak out loud, you don't even need to open your mouth.""",
+				"""It knows what you're thinking and responds. Wouldn't it be nice if conversations outside worked like this too?""",
+
+				""""If only you'd stop trying to make everything more efficient," it sighs.
+
+You laugh. That's true. You're still obsessed with productivity even now.
+
+Work really has gotten to you."""
+			]
+		},
+		{
+			"text": "Don't think nonsense.",
+			"effects": {"P2": 1},
+			"next_dialogue": [
+				"""Ceilings can't talk. It's just your mind worn out and messy, playing tricks on you again.""",
+
+				""""I should get some rest, to be honest," you say to yourself."""
+			]
+		}
+	]
+	
+	# ==================== V3 选择数据（小选择）====================
+	var v3_choices = [
+		{
+			"text": "Of course.",
+			"effects": {"O2": 1},
+			"next_dialogue": [
+				"""Each tattoo means something.""",
+
+				"""The birthdate marks all your family members. The flowers carry your memory of your grandmother. Your favorite movie quote. The fruit you love.""",
+
+				"""Even the simplest stars carry a meaning known only to yourself. You've never told anyone what those stars represent."""
+			]
+		},
+		{
+			"text": "Maybe not.",
+			"effects": {"P1": 1},
+			"next_dialogue": [
+				"""You've stopped searching for meaning. Maybe you've just been trying to stay connected through tying invisible strings between yourself and the world.""",
+
+				"""But the truth is, your last tattoo was just a basket of oranges. You picked it simply because you like oranges.""",
+
+				"""What meaning could there possibly be?"""
+			]
+		}
+	]
+	
+	choice_data_versions = [v1_choices, v2_choices, v3_choices]
+
+# ==================== 选择后的过渡对话 ====================
+var v1_transition_dialogue: Array[String] = [
+	"""You spent a long time in your apartment though. But you just never get bored with it.
+	
+You put down your phone and close your eyes. You are thinking about:"""
+]
+
+var v2_transition_dialogue: Array[String] = [
+	"""You sit up, unlock your phone and start checking all unread notifications. You can't stand the red icons cluttering your screen.
+	
+Then a reminder pops up, something you've written down long ago.
+
+It's the time to…"""
+]
+
+var v3_transition_dialogue: Array[String] = [
+	"""Whether it is meaningful or not, the night is nearly over. In the time that remains…"""
+]
+
+# ==================== 大选择数据 ====================
+# V1的大选择：5个场景
+var v1_big_choices = [
+	{
+		"text": "Sleep a lot?",
+		"effects": {},
+		"next_scene": "apartment"
+	},
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside"
+	},
+	{
+		"text": "Maybe visit a friend?",
+		"effects": {},
+		"next_scene": "friend_house"
+	},
+	{
+		"text": "Maybe go to the bar?",
+		"effects": {},
+		"next_scene": "yaki_bar"
+	},
+	{
+		"text": "Facetime with parents",
+		"effects": {},
+		"next_scene": "parents"
+	}
+]
+
+# V2的大选择：4个场景
+var v2_big_choices = [
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside"
+	},
+	{
+		"text": "Maybe visit a friend?",
+		"effects": {},
+		"next_scene": "friend_house"
+	},
+	{
+		"text": "Maybe go to the bar?",
+		"effects": {},
+		"next_scene": "yaki_bar"
+	},
+	{
+		"text": "Facetime with parents",
+		"effects": {},
+		"next_scene": "parents"
+	}
+]
+
+# V3的大选择：5个选项（含ending）
+var v3_big_choices = [
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside"
+	},
+	{
+		"text": "Maybe visit a friend?",
+		"effects": {},
+		"next_scene": "friend_house"
+	},
+	{
+		"text": "Maybe go to the bar?",
+		"effects": {},
+		"next_scene": "yaki_bar"
+	},
+	{
+		"text": "Facetime with parents",
+		"effects": {},
+		"next_scene": "parents"
+	},
+	{
+		"text": "Just stay here",
+		"effects": {},
+		"next_scene": "ending"
+	}
+]
+
+# ==================== 图片路径映射 ====================
+func get_choice_image_path(choice_text: String) -> String:
+	"""返回选项图片路径"""
+	var text_lower = choice_text.to_lower()
+	
+	var image_map = {
+		# V1 小选择
+		"hazel": "res://assets/choices/apartment/apartment_letin.png",
+		"browsing": "res://assets/choices/apartment/apartment_browsing.png",
+		
+		# V2 小选择
+		"ceiling": "res://assets/choices/apartment/apartment_ceiling.png",
+		"nonsense": "res://assets/choices/apartment/apartment_myself.png",
+		
+		# V3 小选择
+		"of course": "res://assets/choices/apartment/apartment_yes.png",
+		"maybe not": "res://assets/choices/apartment/apartment_no.png",
+		
+		# 大选择（共享）
+		"sleep": "res://opening/apartment_opening.png",
+		"parents": "res://opening/parents_opening.png",
+		"facetime": "res://opening/parents_opening.png",
+		"friend": "res://opening/friend_opening.png",
+		"bar": "res://opening/bar_opening.png",
+		"seaside": "res://opening/seaside_opening.png",
+		"stay": "res://assets/choices/apartment/apartment_stay.png"
+	}
+	
+	for key in image_map:
+		if key in text_lower:
+			return image_map[key]
+	
+	return "res://icon.png"
+
+# ==================== 覆盖：显示选择 ====================
+func _show_choices():
+	"""显示选择并调整图片大小"""
+	
+	# 判断是否为大选择（showing_transition = true 时显示的是大选择）
+	var is_big_choice = showing_transition
+	
+	# 调用父类显示
+	super._show_choices()
+	
+	# ========== 动态调整图片大小 ==========
+	var target_size_px = 0.0
+	
+	if is_big_choice:
+		# 大选择：小一点
+		target_size_px = 350.0
+	else:
+		# 小选择：大一点
+		target_size_px = 300.0
+	
+	# 应用缩放
+	for node in choice_nodes:
+		if node.visible:
+			var img = node.get_node("ChoiceImage")
+			if img and img.texture:
+				var original_size = img.texture.get_size()
+				
+				if original_size.x > 0:
+					var scale_factor = target_size_px / original_size.x
+					img.scale = Vector2(scale_factor, scale_factor)
+	# ========== 缩放结束 ==========
+
+# ==================== 选择点击处理 ====================
+func _on_choice_input_event(viewport, event: InputEvent, shape_idx, choice_data_item: Dictionary):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		if choice_state != ChoiceState.IDLE:
+			print("[DEBUG] Choice click ignored, state: %s" % choice_state)
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		print("\n========== CHOICE CLICKED ==========")
+		print("  Text: %s" % choice_data_item.get("text", ""))
+		print("  Version: %d" % current_version)
+		print("  choice_count: %d" % GM.choice_count)
+		print("====================================\n")
+		
+		# 检查第4个选择
+		if GM.choice_count >= 4:
+			print("→ 4TH CHOICE! Triggering ending...")
+			GM.trigger_ending()
+			return
+		
+		# 应用分数
+		if choice_data_item.has("effects"):
+			for stat in choice_data_item.effects:
+				if GM.stats.has(stat):
+					GM.stats[stat] += choice_data_item.effects[stat]
+					print("[Stats Applied] %s +%d = %d" % [stat, choice_data_item.effects[stat], GM.stats[stat]])
+		
+		choice_container.visible = false
+		choice_state = ChoiceState.CHOICE_MADE
+		
+		var next_scene = choice_data_item.get("next_scene", "")
+		
+		# 处理场景跳转（大选择直接跳转）
+		if next_scene != "":
+			print("→ Jumping to scene: ", next_scene)
+			GM.change_scene(next_scene)
+			return
+		
+		# ========== 小选择：显示过渡对话 ==========
+		print("\n[Small Choice Selected] Showing transition dialogue...")
+		
+		showing_transition = true
+		choice_dialogue_finished = false
+		
+		# 根据版本选择过渡对话
+		if current_version == 1:
+			dialogue_segments = v1_transition_dialogue
+		elif current_version == 2:
+			dialogue_segments = v2_transition_dialogue
+		elif current_version == 3:
+			dialogue_segments = v3_transition_dialogue
+		
+		current_segment_index = 0
+		is_dialogue_finished = false
+		dialogue_panel.visible = true
+		
+		print("[TRANSITION] Calling _start_next_segment()...")
+		_start_next_segment()
+
+# ==================== 对话完成处理 ====================
+func _on_dialogue_finished():
+	"""对话全部完成后的处理"""
+	is_dialogue_finished = true
+	
+	print("\n========== DIALOGUE FINISHED ==========")
+	print("  Version: %d" % current_version)
+	print("  choice_count: %d" % GM.choice_count)
+	print("  showing_transition: %s" % showing_transition)
+	print("=======================================\n")
+	
+	# 检查第4个选择
+	if GM.choice_count >= 4:
+		print("→ 4th choice completed, triggering ending")
+		GM.trigger_ending()
+		return
+	
+	# ========== 过渡对话完成，显示大选择 ==========
+	if showing_transition:
+		print("→ Transition finished, showing big choices")
+		showing_transition = false
+		
+		await get_tree().create_timer(0.5).timeout
+		
+		# 根据版本选择对应的大选择
+		if current_version == 1:
+			choice_data = v1_big_choices
+			print("[Big Choice] Loading V1 big choices (5 options)")
+		elif current_version == 2:
+			choice_data = v2_big_choices
+			print("[Big Choice] Loading V2 big choices (4 options)")
+		elif current_version == 3:
+			choice_data = v3_big_choices
+			print("[Big Choice] Loading V3 big choices (5 options with ending)")
+		
+		# 标记这次是大选择
+		showing_transition = true  # 用于 _show_choices 判断图片大小
+		choice_state = ChoiceState.IDLE
+		
+		print("[Big Choice] Calling _show_choices()...")
+		_show_choices()
+		showing_transition = false  # 显示完毕后重置
+		print("[Big Choice] _show_choices() returned\n")
+		return
+	
+	# ========== 开场对话完成，显示小选择 ==========
+	print("→ Opening dialogue finished, showing small choices")
+	_show_choices()
+
+# ==================== 覆盖 Hover 处理 ====================
+func _on_choice_mouse_entered(choice_label: Label, choice_image: Sprite2D, choice_data_item: Dictionary):
+	"""鼠标悬停到选择上（支持完整对话预览）"""
+	if choice_state != ChoiceState.IDLE:
+		return
+	
+	# 保存hover的节点引用
+	hovered_choice_label = choice_label
+	hovered_choice_image = choice_image
+	
+	# 显示label
+	var tween = create_tween()
+	tween.tween_property(choice_label, "modulate:a", 1.0, 0.3)
+	
+	# 图片变暗
+	choice_image.self_modulate = Color(0.6, 0.6, 0.6)
+	
+	# 准备完整的预览对话
+	var next_dialogue = choice_data_item.get("next_dialogue", "")
+	
+	# 只有真正有内容时才进入预览模式
+	if next_dialogue is Array and next_dialogue.size() > 0:
+		hover_preview_segments = next_dialogue.duplicate()
+	elif next_dialogue is String and next_dialogue != "":
+		hover_preview_segments = [next_dialogue]
+	else:
+		hover_preview_segments = []
+	
+	# 只有当有预览内容时，才进入预览模式
+	if hover_preview_segments.size() > 0:
+		choice_state = ChoiceState.HOVER_ACTIVE
+		is_in_hover_preview = true
+		hover_typing_finished = false
+		
+		# 显示第一段
+		hover_current_segment = 0
+		hover_desc_container.visible = true
+		hover_desc_text.start_typing(hover_preview_segments[0])
+		
+		print("[Hover Preview] Started: %d segments" % hover_preview_segments.size())
+	else:
+		# 没有预览内容（如大选择），只显示视觉效果
+		print("[Hover] No preview content, simple hover only")
+
+func _on_choice_mouse_exited(choice_label: Label, choice_image: Sprite2D):
+	"""鼠标离开选择（只在未预览时生效）"""
+	# 只在非预览状态下隐藏
+	if not is_in_hover_preview:
+		# 隐藏label
+		var tween = create_tween()
+		tween.tween_property(choice_label, "modulate:a", 0.0, 0.3)
+		
+		# 图片恢复
+		choice_image.self_modulate = Color(1.0, 1.0, 1.0)
+		
+		# 隐藏描述（如果有的话）
+		if hover_desc_container.visible:
+			hover_desc_container.visible = false
+			hover_desc_text.stop_typing()
+		
+		# 清理引用
+		hovered_choice_label = null
+		hovered_choice_image = null
+
+func _input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# ========== 处理hover预览中的点击 ==========
+		if is_in_hover_preview:
+			get_viewport().set_input_as_handled()
+			
+			if not hover_typing_finished:
+				# 第一次点击：完成当前段落的打字
+				hover_desc_text.finish_typing()
+				hover_typing_finished = true
+				print("[Hover Preview] Finished typing segment %d" % (hover_current_segment + 1))
+			
+			# 检查是否需要翻页
+			if hover_typing_finished:
+				# 打字已完成，翻到下一页
+				hover_current_segment += 1
+				
+				if hover_current_segment < hover_preview_segments.size():
+					# 还有下一页
+					print("[Hover Preview] Page %d/%d" % [hover_current_segment + 1, hover_preview_segments.size()])
+					hover_typing_finished = false
+					hover_desc_text.start_typing(hover_preview_segments[hover_current_segment])
+				else:
+					# 预览完成，结束hover
+					print("[Hover Preview] Completed")
+					_end_hover_preview()
+			
+			return
+		
+		# 如果choice_container可见，不处理对话点击
+		if choice_container.visible:
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		# 处理正常的对话点击
+		if dialogue_panel.visible:
+			if is_typing:
+				print("[Input] Finishing typing...")
+				_finish_typing()
+			elif not is_typing and not is_dialogue_finished:
+				print("[Input] Next segment (current: %d/%d)" % [current_segment_index, dialogue_segments.size()])
+				_start_next_segment()
+			elif is_dialogue_finished:
+				print("[Input] Dialogue finished, calling super._input()...")
+				super._input(event)
+
+func _end_hover_preview():
+	"""结束hover预览，恢复可点击状态"""
+	is_in_hover_preview = false
+	hover_preview_segments = []
+	hover_current_segment = 0
+	hover_typing_finished = false
+	
+	# 恢复状态
+	choice_state = ChoiceState.IDLE
+	
+	# 隐藏hover描述
+	hover_desc_container.visible = false
+	hover_desc_text.stop_typing()
+	
+	# 恢复label和图片状态
+	if hovered_choice_label:
+		var tween = create_tween()
+		tween.tween_property(hovered_choice_label, "modulate:a", 0.0, 0.3)
+	
+	if hovered_choice_image:
+		hovered_choice_image.self_modulate = Color(1.0, 1.0, 1.0)
+	
+	hovered_choice_label = null
+	hovered_choice_image = null
+	
+	print("[Hover Preview] Ended, choices now clickable")
+
+func _start_next_segment():
+	"""开始下一段对话（添加调试）"""
+	print("\n[_start_next_segment] Called")
+	print("  current_segment_index: %d" % current_segment_index)
+	print("  dialogue_segments.size(): %d" % dialogue_segments.size())
+	
+	if current_segment_index >= dialogue_segments.size():
+		print("  → All segments finished, calling _on_dialogue_finished()")
+		_on_dialogue_finished()
+		return
+	
+	print("  → Starting segment %d: '%s...'" % [current_segment_index, dialogue_segments[current_segment_index].substr(0, 50)])
+	
+	# 调用父类
+	super._start_next_segment()
+	
+	print("[_start_next_segment] Returned\n")
+
+	# ========== 【添加宝丽来照片效果】 ==========
+	randomize()
+	
+	for i in range(choice_nodes.size()):
+		var node = choice_nodes[i]
+		if node.visible:
+			# 随机旋转
+			node.rotation_degrees = randf_range(-10.0, 10.0)
+			
+			# 位置微调（模拟随意摆放）
+			node.position += Vector2(
+				randf_range(-20, 20),  # X轴微调
+				randf_range(-20, 20)   # Y轴微调
+			)
+			
+			# Z轴深度感（可选）
+			node.z_index = randi() % 3  # 0, 1, 或 2
+			
+			print("[Polaroid] Choice%d: rotation=%.1f°, z_index=%d" % [i+1, node.rotation_degrees, node.z_index])
+	choice_state = ChoiceState.IDLE
+	# ========== 【宝丽来效果结束】 ==========
