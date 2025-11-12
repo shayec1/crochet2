@@ -1,0 +1,91 @@
+# ending01
+extends EndingBase
+
+func _ready():
+	# 第一页
+	page1_text = """"I listened to an almost
+forgotten sound within myself
+
+as if my heart, long stopped,
+were calmly beginning to beat again."
+
+"""
+	
+	# 第二页
+	page2_text = """You haven't felt this for a long time, at least for one year.
+Maybe you forgot you even could.
+	
+The feeling is fragile and it's stirring in your chest. Like something you thought were dead but turns out was just hibernating.
+
+Don't get too excited though.
+You've been disappointed before."""
+	
+	super._ready()
+
+# ending02
+extends EndingBase
+
+func _ready():
+	# 第一页
+	page1_text = """"The important thing, as Abbé Galiani said to Mme d’Epinay,
+	is not to be cured,
+	
+	but to live with one’s ailments."
+
+"""
+	
+	# 第二页
+	page2_text = """Right. Because you are 
+	not getting fixed, are you?
+	
+	The crushing weight of everything is all just part of
+	your package now. Maybe you don’t need to fix anything,
+	even yourself.
+	
+	Live anyway,
+	with those broken parts and all."""
+	
+	super._ready()
+
+# ending03
+extends EndingBase
+
+func _ready():
+	# 第一页
+	page1_text = """"They remain so today."
+"""
+	
+	# 第二页
+	page2_text = """And they probably always will. Nothing changes, not really.
+	
+	You keep hoping some big moments will happen that tomorrow will be different, but here you are. Same problems, same exhaustion and same you. That’s the real nightmare.
+	
+	Not saying things are turning bad, but that they stay
+	exactly the same.
+	
+	As always."""
+	
+	super._ready()
+
+# ending04
+extends EndingBase
+
+func _ready():
+	# 第一页
+	page1_text = """"You end up by being silly then"
+"""
+	
+	# 第二页
+	page2_text = """The world makes you feel sick.
+
+And this is not the first
+day that you think so.
+
+“Fuck it, I’m done with
+this ‘earth online’ game.
+
+Sign me up for the
+next update, or maybe not.”
+"""
+	
+	super._ready()
