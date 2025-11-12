@@ -1,0 +1,461 @@
+extends Node2D
+class_name SceneBase # 允许其他脚本使用 "extends SceneBase"
+
+# ----------------------------------------------------
+# 属性定义 (子类必须覆盖这些)
+# ----------------------------------------------------
+@export var scene_name: String = "base_scene"
+@export var dialogue_data_versions: Array = [["V1: Please set dialogue text in subclass."], ["V2: Scene data not set."], ["V3: Scene data not set."]]
+@export var choice_data_versions: Array = [ [], [], [] ]
+
+# ----------------------------------------------------
+# 子状态枚举 (用于管理悬停/描述的复杂互动)
+# ----------------------------------------------------
+enum ChoiceState {
+	IDLE,               # 正常等待选择（鼠标悬停会触发悬停效果）
+	HOVER_ACTIVE,       # 鼠标悬停定格，打字机正在运行
+	HOVER_FINISHED,     # 打字机完成，等待点击关闭描述
+	CHOICE_MADE         # 选项已点击，准备跳转
+}
+
+# ----------------------------------------------------
+# 运行时变量 (已移除泛型限制)
+# ----------------------------------------------------
+var dialogue_segments: Array = []
+var choice_data: Array = []
+var current_version: int = 1
+var current_segment_index: int = 0
+var is_typing: bool = false
+var is_dialogue_finished: bool = false
+var choice_state = ChoiceState.IDLE      # 【新增】选择的子状态
+var currently_hovered_image: Sprite2D = null
+var currently_hovered_label: Label = null
+var currently_hovered_data: Dictionary = {}
+
+# ----------------------------------------------------
+# 节点引用 (基于你的场景树模板)
+# ----------------------------------------------------
+@onready var background: Sprite2D = $BackgroundContainer/BackgroundSprite
+@onready var dialogue_panel: Control = $DialoguePanel
+@onready var dialogue_text: RichTextLabel = $DialoguePanel/DialogueText
+@onready var choice_container: Node2D = $ChoiceContainer
+@onready var choice_nodes: Array[Node] = _get_choice_nodes()
+
+# 【悬停描述引用】
+@onready var hover_desc_container: Control = $HoverDescriptionContainer
+@onready var hover_desc_text: RichTextLabel = $HoverDescriptionContainer/HoverDescriptionText
+
+# ----------------------------------------------------
+# 【修正】将公共函数移到顶部，确保可见性
+# 【必须在子类中覆盖】这个公共函数
+# ----------------------------------------------------
+func get_choice_image_path(choice_text: String) -> String:
+	"""返回选项图片的路径。必须由子类覆盖"""
+	push_error("ERROR: get_choice_image_path must be implemented by the subclass.")
+	return "res://icon.png"
+	
+# ==================== 初始化 ====================
+
+func _ready():
+	# 1. 【核心】获取当前版本号并递增
+	current_version = GM.get_scene_version(scene_name)
+	GM.visit_scene(scene_name)
+	
+	# 2. 加载数据
+	_load_version_data()
+	
+	# 3. 设置背景
+	_set_background_version()
+	
+	# 4. 初始化 UI 状态
+	dialogue_panel.visible = true
+	dialogue_text.visible = true
+	dialogue_text.text = ""
+	choice_container.visible = false
+	hover_desc_container.visible = false # 确保初始隐藏
+	
+	# 5. 开始第一段对话
+	_start_next_segment()
+
+# ==================== 版本加载核心 ====================
+
+func _load_version_data():
+	"""Loads dialogue and choice data based on the current scene version."""
+	var data_index = current_version - 1
+	
+	# --- 对话数据加载 (逻辑不变) ---
+	if data_index >= dialogue_data_versions.size():
+		push_error("ERROR: %s V%d dialogue data is missing. Defaulting to last available version." % [scene_name, current_version])
+		data_index = dialogue_data_versions.size() - 1
+	
+	if data_index >= 0 and data_index < dialogue_data_versions.size():
+		dialogue_segments = dialogue_data_versions[data_index]
+	
+	# --- 选择数据加载 (逻辑不变) ---
+	if data_index >= choice_data_versions.size():
+		push_error("ERROR: %s V%d choice data is missing. Defaulting to last available version." % [scene_name, current_version])
+		data_index = choice_data_versions.size() - 1
+
+	if data_index >= 0 and data_index < choice_data_versions.size():
+		choice_data = choice_data_versions[data_index]
+	
+	print("DEBUG: Loaded %s V%d data." % [scene_name, current_version])
+
+func _set_background_version():
+	"""根据当前版本加载正确的背景图片"""
+	# 构造背景资源路径 (例如: res://assets/backgrounds/yaki_bar_background_v1.png)
+	var bg_path = "res://assets/backgrounds/%s_background_v%d.jpg" % [scene_name, current_version]
+	
+	if not ResourceLoader.exists(bg_path):
+		push_error("ERROR: Failed to load background: " + bg_path + " (Path does not exist)")
+		return
+		
+	var bg_resource = load(bg_path)
+	
+	if bg_resource:
+		background.texture = bg_resource
+		print("DEBUG: Loaded background: %s" % bg_path)
+	else:
+		push_error("ERROR: Failed to load background (load() failed): " + bg_path)
+		
+# ==================== 输入处理 ====================
+
+func _input(event):
+	# 监听通用点击（鼠标左键按下）来推进对话和关闭描述
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# 1. 处理悬停描述面板的关闭或跳过
+		if choice_state == ChoiceState.HOVER_FINISHED:
+			# 第二次点击：关闭描述面板
+			_clear_hover_state()
+			get_viewport().set_input_as_handled()
+			return
+		elif choice_state == ChoiceState.HOVER_ACTIVE:
+			# 第一次点击：跳过打字动画
+			if not hover_desc_text.is_skipped:
+				hover_desc_text.skip_to_end()
+			else:
+				# 逻辑错误保护：如果跳过之后没有成功进入 HOVER_FINISHED，强制结束
+				hover_desc_text.finish_typing()
+			get_viewport().set_input_as_handled()
+			return
+			
+		# 2. 检查点击是否发生在 ChoiceContainer 区域内 (防止对话被误点)
+		if choice_container.visible and _is_click_on_choice_area(event.global_position):
+			return
+			
+		get_viewport().set_input_as_handled()
+		
+		# 3. 对话和选项显示逻辑 (只在 dialogue_panel 可见时执行)
+		if dialogue_panel.visible:
+			if is_typing:
+				_finish_typing() # 点击跳过打字
+			elif not is_typing and not is_dialogue_finished:
+				_start_next_segment() # 点击继续下一段
+			elif is_dialogue_finished:
+				_show_choices() # 对话结束，点击显示选项
+
+func _is_click_on_choice_area(global_click_pos: Vector2) -> bool:
+	"""
+	检查点击是否落在任何一个可见的 ChoiceArea 上方。
+	
+	修复了 Sprite2D 没有 get_global_rect() 函数的问题，改为手动计算 Rect2。
+	"""
+	for choice_node in choice_nodes:
+		# 仅检查可见的选项
+		if choice_node.visible:
+			# 假设 ChoiceArea 节点下有名为 "ChoiceImage" 的 Sprite2D
+			var img: Sprite2D = choice_node.get_node("ChoiceImage")
+			
+			# 确保节点有效且有贴图
+			if is_instance_valid(img) and img.get_texture():
+				
+				# 1. 获取原始贴图尺寸
+				var texture_size: Vector2 = img.get_texture().get_size()
+				
+				# 2. 考虑缩放，计算实际显示的尺寸
+				var scaled_size: Vector2 = texture_size * img.get_scale()
+				
+				# 3. 假设 Sprite2D 的中心点是其全局位置，计算 Rect2 的左上角
+				# 左上角位置 = 全局位置 - (缩放后的尺寸 / 2)
+				var top_left: Vector2 = img.get_global_position() - scaled_size / 2.0
+				
+				# 4. 创建全局边界矩形
+				var global_rect: Rect2 = Rect2(top_left, scaled_size)
+				
+				# 5. 检查点击点是否在矩形内
+				if global_rect.has_point(global_click_pos):
+					return true
+					
+	return false
+	
+# ==================== 对话逻辑 (打字机) ====================
+
+func _start_next_segment():
+	"""开始下一段对话"""
+	if current_segment_index >= dialogue_segments.size():
+		is_dialogue_finished = true
+		dialogue_text.text = dialogue_segments[current_segment_index - 1] # 确保显示最后一段文本
+		return
+		
+	is_typing = true
+	dialogue_text.text = "" # 清空上一段
+	
+	var target_text = dialogue_segments[current_segment_index]
+	
+	# 【背景变暗动画】
+	var bg_tween = create_tween()
+	bg_tween.tween_property(background, "modulate", Color(0.3, 0.3, 0.3, 1), 0.5)
+	
+	# 确保 Typewriter.gd 脚本挂载在 DialogueText 上 (逻辑不变)
+	if not dialogue_text.has_method("start_typing"):
+		push_error("ERROR: Typewriter.gd script not attached!")
+		_finish_typing()
+		return
+	
+	# 重置 is_skipped 状态
+	if "is_skipped" in dialogue_text:
+		dialogue_text.is_skipped = false
+	
+	dialogue_text.start_typing(target_text)
+	
+	# 连接打字机完成信号 (确保只连接一次)
+	if not dialogue_text.typing_finished.is_connected(_on_typing_finished):
+		dialogue_text.typing_finished.connect(_on_typing_finished)
+
+func _on_typing_finished():
+	"""打字机完成时的回调"""
+	is_typing = false
+	current_segment_index += 1
+
+func _finish_typing():
+	"""立即显示全文"""
+	if is_typing:
+		if dialogue_text.has_method("skip_to_end"):
+			dialogue_text.skip_to_end()
+		else:
+			dialogue_text.text = dialogue_segments[current_segment_index]
+			_on_typing_finished()
+
+# ==================== 选择逻辑 (悬停/点击) ====================
+
+func _get_choice_nodes() -> Array[Node]:
+	"""获取 ChoiceContainer 下所有名为 Choice[数字] 的节点"""
+	var nodes: Array[Node] = []
+	for child in choice_container.get_children():
+		if child is Node2D and child.name.begins_with("Choice"):
+			nodes.append(child)
+	return nodes
+
+
+func _show_choices():
+	"""隐藏对话框，初始化并显示选择项，或处理自动选择"""
+	dialogue_panel.visible = false
+	is_dialogue_finished = false # 重置状态
+	
+	# 【核心修改】：检查是否为自动选择 (逻辑不变)
+	if choice_data.size() == 1 and choice_data[0].get("text") == "AUTO_CHOICE":
+		print("DEBUG: Auto-choice detected. Making choice and advancing scene.")
+		GM.make_choice(choice_data[0])
+		return # 立即返回，不显示 ChoiceContainer
+		
+	# --- 如果不是自动选择，则执行标准的选择显示逻辑 ---
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	choice_container.visible = true
+	
+	# 初始化选择项：绑定数据、Label、信号
+	for i in range(choice_nodes.size()):
+		var choice_node = choice_nodes[i]
+		
+		if i < choice_data.size():
+			var data: Dictionary = choice_data[i]
+			
+			# VVVVVV 修复：在这里定义所有局部变量 VVVVVV
+			var img: Sprite2D = choice_node.get_node("ChoiceImage") # 保持 Sprite2D 类型
+			var label: Label = choice_node.get_node("ChoiceLabel") # <--- 修正：定义 label
+			var area: Area2D = choice_node.get_node("ClickArea")   # <--- 修正：定义 area
+			# ^^^^^^ 修复 ^^^^^^
+			
+			if is_instance_valid(img) and is_instance_valid(label) and is_instance_valid(area):
+				# 1. 设置图片
+				var img_path = get_choice_image_path(data.get("text", ""))
+				print("DEBUG Choice%d: text='%s', path='%s'" % [i+1, data.get("text", ""), img_path])
+
+				# VVVVVV 修复：移除 ResourceLoader.exists() 检查 VVVVVV
+				var loaded_texture = load(img_path)
+				
+				if loaded_texture is Texture2D:
+					img.texture = loaded_texture
+					
+					# VVVVVV 动态缩放补偿 VVVVVV
+					# 假设您希望所有图片最终显示为 280x280 像素的大小 (这个值需要您自己确定)
+					const TARGET_SIZE_PX = 280.0
+					
+					var original_size = loaded_texture.get_size()
+					
+					# 检查原始尺寸是否大于零，防止除以零的错误
+					if original_size.x > 0 and original_size.y > 0:
+						# 计算所需的缩放因子： (目标尺寸 / 原始尺寸)
+						var scale_factor = TARGET_SIZE_PX / original_size.x
+						# 应用新的缩放，确保宽高相等
+						img.scale = Vector2(scale_factor, scale_factor)
+					else:
+						push_error("ERROR: Loaded texture has zero dimension, cannot scale.")
+						img.texture = null
+					# ^^^^^^ 动态缩放补偿 ^^^^^^
+					
+				else:
+					# 如果加载失败 (文件不存在或不是图片)，loaded_texture 会是 null 或非 Texture2D
+					push_error("ERROR: Failed to load/verify Choice image at path: " + img_path)
+					img.texture = null
+				# ^^^^^^ 修复：移除 ResourceLoader.exists() 检查 ^^^^^^
+
+				# 2. 【已修复，关键】：从 data 中获取新文本，并设置给 Label
+				# 解决切换到 sub_choices 后 Label 文本不刷新的问题
+				var choice_text_from_data = data.get("text", "MISSING TEXT")
+				label.text = choice_text_from_data
+				
+				# 3. 初始化 Label 透明度和 Sprite2D 颜色
+				label.modulate.a = 0.0
+				img.self_modulate = Color(1, 1, 1, 1)
+				choice_node.visible = true
+				
+				# 4. 连接信号 (逻辑不变)
+				_connect_choice_signals(area, label, img, data)
+			else:
+				push_error("ERROR: Choice node %s structure is missing required child nodes." % choice_node.name)
+		else:
+			choice_node.visible = false
+			
+# 【辅助函数】：连接选择信号
+func _connect_choice_signals(area: Area2D, label: Label, img: Sprite2D, data: Dictionary):
+	# 确保连接信号时，先断开旧连接
+	_disconnect_area_signals(area)
+	
+	# 【悬停开始】：绑定 Label, Sprite, DATA
+	area.mouse_entered.connect(_on_choice_mouse_entered.bind(label, img, data))
+	# 【悬停离开】：绑定 Label, Sprite
+	area.mouse_exited.connect(_on_choice_mouse_exited.bind(label, img))
+	# 【点击】：绑定 DATA
+	area.input_event.connect(_on_choice_input_event.bind(data))
+
+func _disconnect_area_signals(area: Area2D):
+	"""断开Area2D的所有信号"""
+	for signal_name in ["mouse_entered", "mouse_exited", "input_event"]:
+		for connection in area.get(signal_name).get_connections():
+			area.get(signal_name).disconnect(connection["callable"])
+
+# --------------------------------------------------------------------
+# --- 新增：悬停/定格/清理逻辑 ---
+# --------------------------------------------------------------------
+
+func _clear_hover_state():
+	"""清理描述面板和高亮，恢复到 IDLE 状态"""
+	if choice_state == ChoiceState.IDLE:
+		return
+
+	# 1. 描述面板淡出
+	var desc_fade_tween = create_tween()
+	desc_fade_tween.tween_property(hover_desc_container, "modulate:a", 0, 0.3)
+	
+	# 2. 图像恢复亮度
+	if is_instance_valid(currently_hovered_image):
+		var img_tween = create_tween()
+		img_tween.tween_property(currently_hovered_image, "self_modulate", Color(1, 1, 1, 1), 0.3)
+	
+	# 3. Label 隐藏
+	if is_instance_valid(currently_hovered_label):
+		var label_tween = create_tween()
+		label_tween.tween_property(currently_hovered_label, "modulate:a", 0, 0.3)
+
+	# 4. 背景恢复正常亮度 (正常模式下是 Color(1, 1, 1, 1) - 但在选项阶段应是 Color(0.3, 0.3, 0.3, 1))
+	var bg_tween = create_tween()
+	bg_tween.tween_property(background, "modulate", Color(1, 1, 1, 1), 0.3) # 恢复到正常场景背景
+	
+	await desc_fade_tween.finished
+	
+	hover_desc_container.visible = false
+	
+	# 5. 重置状态
+	choice_state = ChoiceState.IDLE
+	currently_hovered_image = null
+	currently_hovered_label = null
+	currently_hovered_data = {}
+	
+	# 恢复鼠标指针
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+
+func _on_choice_mouse_entered(label_node: Label, image_node: Sprite2D, choice_data_item: Dictionary):
+	"""鼠标悬停：定格图片，显示打字机描述"""
+	
+	# 只有在 IDLE 状态才能开始新的悬停流程
+	if choice_state != ChoiceState.IDLE:
+		return
+		
+	# 1. 记录定格状态和数据
+	choice_state = ChoiceState.HOVER_ACTIVE
+	currently_hovered_image = image_node
+	currently_hovered_label = label_node
+	currently_hovered_data = choice_data_item
+	
+	# 2. 悬停定格效果：图片变暗，Label 显示
+	var label_tween = create_tween()
+	label_tween.tween_property(label_node, "modulate:a", 1, 0.2)
+	
+	var img_tween = create_tween()
+	img_tween.tween_property(image_node, "self_modulate", Color(0.5, 0.5, 0.5, 1), 0.2)
+	
+	# 3. 背景变暗 (进一步变暗，突出描述面板)
+	var bg_tween = create_tween()
+	bg_tween.tween_property(background, "modulate", Color(0.1, 0.1, 0.1, 1), 0.3)
+	
+	# 4. 【新增】：显示描述面板并启动打字机
+	hover_desc_container.visible = true
+	hover_desc_container.modulate.a = 0
+	
+	var desc_fade_tween = create_tween()
+	desc_fade_tween.tween_property(hover_desc_container, "modulate:a", 1, 0.5)
+	
+	# 确保连接信号
+	if not hover_desc_text.typing_finished.is_connected(Callable(self, "_on_desc_typing_finished")):
+		hover_desc_text.typing_finished.connect(Callable(self, "_on_desc_typing_finished"))
+	
+	# 获取描述文本 (来自 choice_data_item["next_dialogue"])
+	var desc_text = choice_data_item.get("next_dialogue", "No description available.")
+	hover_desc_text.start_typing(desc_text)
+	
+	Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
+
+
+func _on_choice_mouse_exited(label_node: Label, image_node: Sprite2D):
+	"""鼠标离开：如果不是定格状态，则恢复"""
+	# 在悬停打字机模式下，鼠标离开不再起作用 (即：定格)
+	pass
+
+func _on_desc_typing_finished():
+	"""描述打字机完成，切换到等待点击关闭描述的状态"""
+	if choice_state == ChoiceState.HOVER_ACTIVE:
+		choice_state = ChoiceState.HOVER_FINISHED
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		print("DEBUG: Description finished typing. Waiting for click to dismiss.")
+
+func _on_choice_input_event(viewport, event: InputEvent, shape_idx, choice_data: Dictionary):
+	"""处理选择点击：点击选项进行场景跳转"""
+	
+	# 检查是否为左键点击
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# 只有在 IDLE 状态下，点击才能被视为最终选择
+		if choice_state != ChoiceState.IDLE:
+			# 如果处于 HOVER 状态，此点击应被忽略
+			return
+
+		# 隐藏选择容器（防止重复点击）
+		choice_container.visible = false
+		
+		# 确保清理了悬停状态（以防万一）
+		_clear_hover_state()
+		
+		# 最终决定交给 GameManager
+		GM.make_choice(choice_data)
