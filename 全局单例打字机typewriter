@@ -1,0 +1,176 @@
+extends RichTextLabel
+
+# ==================== 打字机效果配置 (已更新为 Godot 4: @export) ====================
+@export var typing_speed: float = 0.05  # 每个字符的间隔时间（秒）
+@export var auto_start: bool = true      # 自动开始播放
+@export var sound_enabled: bool = false  # 是否启用打字音效
+@export var typing_sound_path: String = ""
+
+# 内部状态
+var _full_text: String = ""
+var _current_index: int = 0
+var _is_typing: bool = false
+var is_skipped: bool = false # 【新增状态】标记是否已跳过打字动画
+var _typing_timer: float = 0.0
+var _audio_player: AudioStreamPlayer = null
+
+# 信号 (已更新为 Godot 4: signal 关键字)
+signal typing_started
+signal typing_finished
+signal character_typed(character: String)
+
+# ==================== 初始化 ====================
+func _ready():
+	# 设置为可见字符数为0
+	visible_characters = 0
+	
+	# 如果启用音效，创建AudioStreamPlayer
+	if sound_enabled and typing_sound_path != "":
+		_audio_player = AudioStreamPlayer.new()
+		add_child(_audio_player)
+		if ResourceLoader.exists(typing_sound_path):
+			_audio_player.stream = load(typing_sound_path)
+			_audio_player.volume_db = -10
+		else:
+			push_error("打字音效路径错误或文件不存在: " + typing_sound_path)
+
+	# 如果自动开始，延迟一帧后开始
+	if auto_start and text != "":
+		call_deferred("start_typing", text)
+
+# Typewriter.gd 脚本中
+
+# Typewriter.gd 脚本中
+
+# Typewriter.gd 脚本中
+
+# Typewriter.gd 脚本中
+
+# Typewriter.gd 脚本中
+
+func _process(delta):
+	# 确保在跳过模式下不执行打字和滚动
+	if _is_typing and not is_skipped: 
+		_typing_timer += delta
+		
+		# 检查是否该显示下一个字符
+		while _typing_timer >= typing_speed and _current_index < _full_text.length():
+			_current_index += 1
+			visible_characters = _current_index
+			_typing_timer -= typing_speed
+			
+			# ====================================================================
+			# 【使用 RichTextLabel 自身滚动和手动偏移量】
+			
+			var total_lines = get_line_count()
+			
+			if total_lines > 0:
+				
+				# ----------------------------------------------------
+				# 【调整点 A: 魔法数字偏移量】
+				#
+				# 这个值决定了打字行在 RichTextLabel 区域内出现的位置。
+				# 请从 3 开始尝试，如果文本仍然不滚动，请尝试 4 或 5。
+				const CENTER_LINE_OFFSET = 3 
+				# ----------------------------------------------------
+				
+				# 假设当前打字行就是最后一行
+				var current_line = total_lines - 1
+				
+				# 目标滚动行号
+				var target_scroll_line = max(0, current_line - CENTER_LINE_OFFSET)
+				
+				# 执行 RichTextLabel 内部滚动
+				scroll_to_line(target_scroll_line)
+			
+			# ====================================================================
+
+			# 播放音效 (逻辑不变)
+			if _audio_player != null and _current_index < _full_text.length():
+				var char = _full_text[_current_index - 1]
+				if char != " " and char != "\n":
+					_audio_player.play()
+			
+			# 发送信号 (逻辑不变)
+			if _current_index <= _full_text.length():
+				character_typed.emit(_full_text[_current_index - 1])
+			
+			# 检查是否完成 (逻辑不变)
+			if _current_index >= _full_text.length():
+				finish_typing()
+				break
+				
+# ==================== 公共API ====================
+func start_typing(new_text: String):
+	"""开始打字机效果"""
+	if _is_typing:
+		stop_typing()
+	
+	_full_text = new_text
+	text = new_text
+	_current_index = 0
+	visible_characters = 0
+	_typing_timer = 0.0
+	_is_typing = true
+	
+	# 修复: 使用 signal_name.emit()
+	typing_started.emit()
+
+func stop_typing():
+	"""停止打字机效果"""
+	_is_typing = false
+	_typing_timer = 0.0
+
+func finish_typing():
+	"""立即完成打字"""
+	_is_typing = false
+	_current_index = _full_text.length()
+	visible_characters = -1 
+	_typing_timer = 0.0
+	is_skipped = false # 【确保重置为 false】
+	
+	# 发送信号
+	typing_finished.emit()
+
+func skip_to_end():
+	"""跳过动画，直接显示完整文本，但保持在打字状态等待第二次点击"""
+	if not _is_typing:
+		return
+		
+	is_skipped = true # 【确保设置为 true】
+	_current_index = _full_text.length()
+	visible_characters = _current_index # 立即显示所有文本
+	# 注意：我们不调用 finish_typing()，因此不会发出 typing_finished 信号
+
+func is_typing() -> bool:
+	"""返回是否正在打字"""
+	return _is_typing
+
+func set_typing_speed(speed: float):
+	"""设置打字速度"""
+	typing_speed = speed
+
+# ==================== 输入处理 ====================
+# Typewriter.gd 脚本中 (替换整个 _input(event) 函数)
+
+func _input(event):
+	# 确保只处理鼠标左键按下或任意按键按下
+	var is_activation_event = (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed()) or \
+							  (event is InputEventKey and event.is_pressed())
+	
+	if _is_typing and is_activation_event:
+		
+		if not is_skipped:
+			# 1. 第一次点击：跳过打字动画，显示全文
+			skip_to_end()
+			get_viewport().set_input_as_handled()
+			
+		else:
+			# 2. 第二次点击：结束打字状态，发出信号
+			# 这会触发 Opening.gd 中的 _on_description_typing_finished，
+			# 将 Opening.gd 的状态设置为 WAITING_DESCRIPTION_DISMISS。
+			finish_typing() 
+			get_viewport().set_input_as_handled()
+			
+	# 【注意】我们不在这里直接调用 hide_description()，让 Opening.gd 的
+	# WAITING_DESCRIPTION_DISMISS 状态逻辑在下一次点击时处理隐藏。
