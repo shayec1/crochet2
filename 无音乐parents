@@ -1,0 +1,574 @@
+extends SceneBase
+
+# ==================== Hover 状态管理 ====================
+var is_in_hover_preview = false
+var hover_preview_segments: Array = []  # ← 改成普通 Array
+var hover_current_segment = 0
+var hovered_choice_label: Label = null
+var hovered_choice_image: Sprite2D = null
+var hover_typing_finished = false  # ← 添加这个标记
+var showing_transition = false  # 是否在显示过渡对话
+var choice_dialogue_finished = false  # 选择后的对话是否完成
+
+# ==================== 初始化场景数据 ====================
+
+func _init():
+	scene_name = "parents"
+	
+	# ==================== V1 对话数据 ====================
+	var v1_dialogues: Array[String] = [
+		"""You had actually planned to fly back home tonight to visit your parents after deciding to give yourself an evening of rest. But then you thought, once you're there, it'll be hard to make decisions entirely based on what you want.""",
+
+		"""To put it more directly, you can't bear to leave them. You're not cold-hearted enough to completely ignore their opinions. You'd still quietly carry the weight of their expectations, showing them only your best side while keeping your worries to yourself.""",
+
+		"""But tonight, you wanted to live entirely on your own terms.
+
+"Today is a resting place, and my heart goes out to meet itself."
+
+In the end, you decide to do what you usually do that is have a facetime with them.""",
+
+		""""Just got off work?"
+
+The call was picked up almost instantly. Your parents greeted you through the tiny, crowded screen.
+
+"Yeah, I did."
+
+You hesitate for a moment, unsure if you should tell them the news about your symptoms."""
+	]
+	
+	# ==================== V2 对话数据 ====================
+	var v2_dialogues: Array[String] = [
+		"""You dial the same number for the second time. The phone rings for a while before someone answers. Your mom says they were getting ready for hot pot and didn't hear it.
+
+"What's up? Are you home yet?"
+
+That's always their first question. Your safety and health come before anything else, sometimes even before their own.""",
+
+		"""From your parents, you learned love that's unconditional, devoted, and, in some ways, self-sacrificing. You take them into consideration, and they do the same. But what all of you lose in this exchange is: the self.
+
+In your little family, individuality doesn't exist. You take care of each other but never yourselves.""",
+
+		"""Your parents love you deeply, no doubt. Their love burns like the midday sun. At first, it's warm and then it starts to scorch. You seek shelter in the shade, but you know, nothing can hide for long under the sun.
+
+"Are you still listening?" your dad's voice pulls you back.
+
+"Yeah, the signal just cut for a second," you deflect again. "Hot pot tonight? I miss that."
+
+"Next time you come home, we'll have it together," Your mom says, she is already planning."""
+	]
+	
+	# ==================== V3 对话数据 ====================
+	var v3_dialogues: Array[String] = [
+		""""Are you ok?" That's the first thing your parents say when they pick up the phone this third time. Their furrowed brows tell you everything. This is one of those nights you won't be allowed to hang up until you spill everything.
+
+"No, really, I'm fine. I just wanted to ask how my brother's been doing. I forgot to check in."
+
+"Oh, your brother. He hasn't been in a great mood lately because he didn't get a good score in last exam."
+
+Your parents relax, and you're relieved too.""",
+
+		"""The old "brother excuse" still works, just like when you used it to escape those troubles in your childhood.
+
+You and your brother have always been close. You used to "bully" him a little, playing the "older sibling" role, while he was always the obedient one.
+
+Of course, your parents always knew who caused the trouble. Like that time, you kicked a ball through the neighbour's while he was still having his breakfast quietly.
+
+This warm little home has always been your anchor. It is the place that steadies you whenever you drift too far."""
+	]
+	
+	dialogue_data_versions = [v1_dialogues, v2_dialogues, v3_dialogues]
+	
+	# ==================== V1 选择数据 ====================
+	var v1_choices = [
+		{
+			"text": "Tell them you're sick",
+			"effects": {"O2": 1},
+			"next_dialogue": [
+				""""Actually… there's something... I'm sick."
+
+The words barely leave your mouth before a flood of questions comes rushing in.""",
+
+				""""What? What happened? When? Why didn't you tell us? How are you feeling now? Have you been under too much stress?"
+
+You knew exactly what to expect because they're always the first to care everytime.""",
+
+				"""Their concern is so sincere it feels like falling into a bed of cotton. It does feel soft and comforting, but at the same time, you're afraid of when you'll fall through.
+
+After some thought, you decide not to tell them the brutal truth. You say it's just a stomach ulcer acting up and you'll be fine after treatment.""",
+
+				"""They sigh in relief and then
+you know what gonna happen.
+
+"Eat breakfast even if you're not hungry, have some milk. Don't skip breakfast. Don't skip lunch. And don't skip dinner. Don't eat spicy food. Stop eating cold food. And stop drinking so much alcohol…"
+
+In the end, you've lost track of how many don'ts they've said, but the essence is always the same: take care of yourself."""
+			]
+		},
+		{
+			"text": "Small talk",
+			"effects": {"P1": 1},
+			"next_dialogue": [
+				"""You decide to keep it light.
+
+You tell them about the tough day you had at work, and they tell you to keep pushing through. You talk about the nice restaurant you went to recently, how work has kept you too busy to see friends, how you want to go to the seaside, how you miss home and your hometown food, how you want to go camping or a hiking.""",
+
+				"""You are saying that you've started climbing lately, how you'd love to do nothing but stay home with your cat all day.
+
+You tell them you want to go to Italy and have glasses of nice wine, eat ice cream in Spain, go shopping for the coming cold weather, take evening walks, shop for fruit to eat while watching TV.""",
+
+				"""You kept talking with no signs of stopping, about the upcoming cherries season and blueberries as sweet as ever.
+
+You're so caught up in conversation and your parents finally ask, "Are you ok? Why it sounds like the last call? Is there anything wrong?"
+
+Only then do you realize how much time has passed, you have been talking for too long."""
+			]
+		}
+	]
+	
+	# ==================== V2 选择数据 ====================
+	var v2_choices = [
+		{
+			"text": "Tell them about your symptoms",
+			"effects": {"O2": 1},
+			"next_dialogue": [
+				"""You tell them your condition is serious but still soften the truth. You just can't bring yourself to lay everything bare.""",
+				
+				"""They're already started worried about you very much and you inventing lighter details to ease their anxiety.""",
+				
+				"""That's why you rarely tell them bad news."""
+			]
+		},
+		{
+			"text": "Okay, I like hotpot",
+			"effects": {"P1": 1},
+			"next_dialogue": [
+				"""\"Next time when I go home we can have that together.\" You agree to your mom's words, but deep down you're not sure when, or even if, that next time will come.""",
+				
+				""""Yeah, I'm fine. I'm heading home now."
+
+"Be careful, it's late."
+
+You hang up quickly. If you'd waited for another second, they would've seen the tears in your eyes.""",
+				
+				"""You wipe them away fast, very fast."""
+			]
+		}
+	]
+	
+	# ==================== V3 选择数据 ====================
+	var v3_choices = [
+		{
+			"text": "Tell your brother to work hard and overcome it",
+			"effects": {"P1": 1},
+			"next_dialogue": [
+				"""You are on the "strict older sibling" role again, though not entirely unkindly.""",
+				
+				"""You think your parents spoil him too much. He tends to give up easily when faced with setbacks, this is unlike you.""",
+				
+				"""You've never been that way. Your instinct is always to act. Doing something always feels better than worrying in place."""
+			]
+		},
+		{
+			"text": "Tell your brother everything should be fine",
+			"effects": {"O2": 1},
+			"next_dialogue": [
+				"""It's not a big deal. One exam, even several, means nothing in the long run.""",
+				
+				"""Twenty-five years old even just equals to the 7:30 a.m. sun which risen in your whole life.""",
+				
+				"""Take it easy. Be water."""
+			]
+		}
+	]
+	
+	choice_data_versions = [v1_choices, v2_choices, v3_choices]
+	
+# ==================== 选择后的过渡对话 ====================
+var v1_transition_dialogue: Array[String] = [
+	"""After hanging up, you sit there in silence. Too many things have happened lately.
+
+You're not sure if calling was the right choice, but in times like this, calling always feels like something good.
+
+Maybe your parents are right, maybe you shouldn't pressure yourself so much, maybe you should see friends more often, eat nice food, go dance, go out and visit new places.
+
+You decide to:"""
+]
+
+var v2_transition_dialogue: Array[String] = [
+	"""After hanging up the phone, you want to detach yourself from this conversation that makes you feel homesick.
+
+You want to change your mood, and you decide:"""
+]
+
+var v3_transition_dialogue: Array[String] = [
+	"""After yet another call, you realize that you really can't call your parents anymore tonight.
+
+You've run out of excuses, and out of words. You can't spend this rare free evening just on phone calls.
+
+You decide to:"""
+]
+
+# ==================== Big Choice（4个场景）====================
+var big_choices = [
+	{
+		"text": "Go back to apartment?",
+		"effects": {},
+		"next_scene": "apartment"
+	},
+	{
+		"text": "Maybe visit a friend?",
+		"effects": {},
+		"next_scene": "friend_house"
+	},
+	{
+		"text": "Maybe go to the bar?",
+		"effects": {},
+		"next_scene": "yaki_bar"
+	},
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside"
+	}
+]
+
+# ==================== 图片路径映射 ====================
+func get_choice_image_path(choice_text: String) -> String:
+	"""返回选项图片路径"""
+	var text_lower = choice_text.to_lower()
+	
+	var image_map = {
+		# V1 选择
+		"tell them you're sick": "res://assets/choices/parents/parents_tellsick.png",
+		"small talk": "res://assets/choices/parents/parents_smalltalk.png",
+		
+		# V2 选择
+		"tell them about your symptoms": "res://assets/choices/parents/parents_symptoms.png",
+		"hotpot": "res://assets/choices/parents/parents_hotpot.png",
+		
+		# V3 选择
+		"work hard": "res://assets/choices/parents/parents_workhard.png",
+		"everything should be fine": "res://assets/choices/parents/parents_befine.png",
+		
+		# Big Choice（复用opening图片）
+		"apartment": "res://opening/apartment_opening.png",
+		"friend": "res://opening/friend_opening.png",
+		"bar": "res://opening/bar_opening.png",
+		"seaside": "res://opening/seaside_opening.png"
+	}
+	
+	for key in image_map:
+		if key in text_lower:
+			return image_map[key]
+	
+	return "res://icon.png"
+
+# ==================== 选择点击处理 ====================
+
+# ==================== 覆盖：显示选择 ====================
+func _show_choices():
+	"""显示选择并调整图片大小"""
+	
+	# 判断是否显示Big Choice
+	var is_big_choice = (choice_data == big_choices)
+	
+	# 调用父类显示
+	super._show_choices()
+	
+	# ========== 动态调整图片大小 ==========
+	var target_size_px = 0.0
+	
+	if is_big_choice:
+		# Big Choice: 4个场景，小一点
+		target_size_px = 400.0
+	else:
+		# 普通选择: 2个选项，大一点
+		target_size_px = 300.0
+	
+	# 应用缩放
+	for node in choice_nodes:
+		if node.visible:
+			var img = node.get_node("ChoiceImage")
+			if img and img.texture:
+				var original_size = img.texture.get_size()
+				
+				if original_size.x > 0:
+					var scale_factor = target_size_px / original_size.x
+					img.scale = Vector2(scale_factor, scale_factor)
+	# ========== 缩放结束 ==========
+	
+func _on_choice_input_event(viewport, event: InputEvent, shape_idx, choice_data_item: Dictionary):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		if choice_state != ChoiceState.IDLE:
+			print("[DEBUG] Choice click ignored, state: %s" % choice_state)
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		# ✅ 递增计数
+		GM.choice_count += 1
+		print("[%s V%d] Big Choice #%d" % [scene_name.to_upper(), current_version, GM.choice_count])
+		
+		# 应用效果
+		if choice_data_item.has("effects"):
+			for stat in choice_data_item.effects:
+				if GM.stats.has(stat):
+					GM.stats[stat] += choice_data_item.effects[stat]
+		
+		choice_container.visible = false
+		choice_state = ChoiceState.CHOICE_MADE
+		
+		var next_scene = choice_data_item.get("next_scene", "")
+		
+		# ✅ 【关键】检查是否是第5次大选择
+		if GM.choice_count >= 5:
+			print("→ [5TH BIG CHOICE] Triggering ending!")
+			
+			var force_ending = choice_data_item.get("force_ending", "")
+			if force_ending != "":
+				GM.trigger_ending(force_ending)
+			else:
+				GM.trigger_ending()
+			
+			return
+			
+		# 处理场景跳转
+		if next_scene in ["apartment", "friend_house", "yaki_bar", "seaside"]:
+			print("→ Jumping to scene: ", next_scene)
+			GM.change_scene(next_scene)
+			return
+		
+		# ========== 修改：直接跳到过渡对话,不显示next_dialogue ==========
+		print("\n[Choice Selected] Skipping to transition dialogue...")
+		
+		# 获取对应版本的过渡对话
+		var transition_dialogue: Array[String] = []
+		
+		if current_version == 1:
+			transition_dialogue = v1_transition_dialogue
+			print("  Using V1 transition")
+		elif current_version == 2:
+			transition_dialogue = v2_transition_dialogue
+			print("  Using V2 transition")
+		elif current_version == 3:
+			transition_dialogue = v3_transition_dialogue
+			print("  Using V3 transition")
+		
+		print("  transition_dialogue.size(): %d" % transition_dialogue.size())
+		
+		# 设置标记：这是过渡对话
+		showing_transition = true
+		choice_dialogue_finished = false  # 重置
+		
+		dialogue_segments = transition_dialogue
+		current_segment_index = 0
+		is_dialogue_finished = false
+		dialogue_panel.visible = true
+		
+		print("[TRANSITION] Calling _start_next_segment()...")
+		_start_next_segment()
+		print("[TRANSITION] _start_next_segment() returned\n")
+		# ==================================
+		
+func _on_dialogue_finished():
+	"""对话全部完成后的处理"""
+	is_dialogue_finished = true
+	
+	print("\n========== DIALOGUE FINISHED ==========")
+	print("  Version: %d" % current_version)
+	print("  choice_count: %d" % GM.choice_count)
+	print("  showing_transition: %s" % showing_transition)
+	print("=======================================\n")
+	
+	# 检查第4个选择
+	if GM.choice_count >= 4:
+		print("→ 4th choice completed, triggering ending")
+		GM.trigger_ending()
+		return
+		
+	# ========== 过渡对话完成,显示Big Choice ==========
+	if showing_transition:
+		print("→ Transition finished, showing big choices")
+		showing_transition = false
+		
+		await get_tree().create_timer(0.5).timeout
+		
+		print("[Big Choice] Setting choice_data...")
+		choice_data = big_choices
+		choice_state = ChoiceState.IDLE
+		
+		print("[Big Choice] Calling _show_choices()...")
+		_show_choices()
+		print("[Big Choice] _show_choices() returned\n")
+		return
+	# ========================================================
+	
+	# ========== 开场对话完成,显示小选择 ==========
+	print("→ Opening dialogue finished, showing choices")
+	super._on_desc_typing_finished()
+	
+# ==================== 覆盖 Hover 处理 ====================
+
+func _on_choice_mouse_entered(choice_label: Label, choice_image: Sprite2D, choice_data_item: Dictionary):
+	"""鼠标悬停到选择上（支持完整对话预览）"""
+	if choice_state != ChoiceState.IDLE:
+		return
+	
+	# 保存hover的节点引用
+	hovered_choice_label = choice_label
+	hovered_choice_image = choice_image
+	
+	# 显示label
+	var tween = create_tween()
+	tween.tween_property(choice_label, "modulate:a", 1.0, 0.3)
+	
+	# 图片变暗
+	choice_image.self_modulate = Color(0.6, 0.6, 0.6)
+	
+	# 准备完整的预览对话
+	var next_dialogue = choice_data_item.get("next_dialogue", "")
+	
+	# ========== 关键修改：只有真正有内容时才进入预览模式 ==========
+	if next_dialogue is Array and next_dialogue.size() > 0:
+		hover_preview_segments = next_dialogue.duplicate()
+	elif next_dialogue is String and next_dialogue != "":
+		hover_preview_segments = [next_dialogue]
+	else:
+		hover_preview_segments = []
+	
+	# 只有当有预览内容时，才进入预览模式
+	if hover_preview_segments.size() > 0:
+		choice_state = ChoiceState.HOVER_ACTIVE
+		is_in_hover_preview = true
+		hover_typing_finished = false
+		
+		# 显示第一段
+		hover_current_segment = 0
+		hover_desc_container.visible = true
+		hover_desc_text.start_typing(hover_preview_segments[0])
+		
+		print("[Hover Preview] Started: %d segments" % hover_preview_segments.size())
+	else:
+		# 没有预览内容（如Big Choice），只显示视觉效果
+		print("[Hover] No preview content, simple hover only")
+	# ==========================
+
+func _on_choice_mouse_exited(choice_label: Label, choice_image: Sprite2D):
+	"""鼠标离开选择（只在未预览时生效）"""
+	# 只在非预览状态下隐藏
+	if not is_in_hover_preview:
+		# 隐藏label
+		var tween = create_tween()
+		tween.tween_property(choice_label, "modulate:a", 0.0, 0.3)
+		
+		# 图片恢复
+		choice_image.self_modulate = Color(1.0, 1.0, 1.0)
+		
+		# 隐藏描述（如果有的话）
+		if hover_desc_container.visible:
+			hover_desc_container.visible = false
+			hover_desc_text.stop_typing()
+		
+		# 清理引用
+		hovered_choice_label = null
+		hovered_choice_image = null
+	# ================================================
+
+func _input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# ========== 处理hover预览中的点击 ==========
+		if is_in_hover_preview:
+			get_viewport().set_input_as_handled()
+			
+			if not hover_typing_finished:
+				# 第一次点击：完成当前段落的打字
+				hover_desc_text.finish_typing()
+				hover_typing_finished = true
+				print("[Hover Preview] Finished typing segment %d" % (hover_current_segment + 1))
+				# ========== 关键修改：完成打字后不return，继续执行下面的逻辑 ==========
+				# 这样就能在同一次点击中判断是否需要翻页
+				# return  # ← 删除这个return
+				# ============================================================
+			
+			# ========== 合并：检查是否需要翻页（无论是刚完成打字还是已经完成） ==========
+			if hover_typing_finished:
+				# 打字已完成，翻到下一页
+				hover_current_segment += 1
+				
+				if hover_current_segment < hover_preview_segments.size():
+					# 还有下一页
+					print("[Hover Preview] Page %d/%d" % [hover_current_segment + 1, hover_preview_segments.size()])
+					hover_typing_finished = false
+					hover_desc_text.start_typing(hover_preview_segments[hover_current_segment])
+				else:
+					# 预览完成，结束hover
+					print("[Hover Preview] Completed")
+					_end_hover_preview()
+			# ============================================================
+			
+			return
+		
+		# 如果choice_container可见，不处理对话点击
+		if choice_container.visible:
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		# 处理正常的对话点击
+		if dialogue_panel.visible:
+			if is_typing:
+				print("[Input] Finishing typing...")
+				_finish_typing()
+			elif not is_typing and not is_dialogue_finished:
+				print("[Input] Next segment (current: %d/%d)" % [current_segment_index, dialogue_segments.size()])
+				_start_next_segment()
+			elif is_dialogue_finished:
+				print("[Input] Dialogue finished, calling super._input()...")
+				super._input(event)
+				
+func _end_hover_preview():
+	"""结束hover预览，恢复可点击状态"""
+	is_in_hover_preview = false
+	hover_preview_segments = []
+	hover_current_segment = 0
+	hover_typing_finished = false  # ← 重置标记
+	
+	# 恢复状态
+	choice_state = ChoiceState.IDLE
+	
+	# 隐藏hover描述
+	hover_desc_container.visible = false
+	hover_desc_text.stop_typing()
+	
+	# 恢复label和图片状态
+	if hovered_choice_label:
+		var tween = create_tween()
+		tween.tween_property(hovered_choice_label, "modulate:a", 0.0, 0.3)
+	
+	if hovered_choice_image:
+		hovered_choice_image.self_modulate = Color(1.0, 1.0, 1.0)
+	
+	hovered_choice_label = null
+	hovered_choice_image = null
+	
+	print("[Hover Preview] Ended, choices now clickable")
+
+func _start_next_segment():
+	"""开始下一段对话（添加调试）"""
+	print("\n[_start_next_segment] Called")
+	print("  current_segment_index: %d" % current_segment_index)
+	print("  dialogue_segments.size(): %d" % dialogue_segments.size())
+	
+	if current_segment_index >= dialogue_segments.size():
+		print("  → All segments finished, calling _on_dialogue_finished()")
+		_on_dialogue_finished()
+		return
+	
+	print("  → Starting segment %d: '%s...'" % [current_segment_index, dialogue_segments[current_segment_index].substr(0, 50)])
+	
+	# 调用父类
+	super._start_next_segment()
+	
+	print("[_start_next_segment] Returned\n")
