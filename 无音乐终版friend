@@ -1,0 +1,479 @@
+extends SceneBase
+
+# ==================== 初始化场景数据 ====================
+
+func _init():
+	scene_name = "friend_house"
+
+	# ===== V1 对话数据 =====
+	var v1_dialogues: Array[String] = [
+		"You are on the underground to your friend's place. It's always too noisy on the way. The noise is deafening all the time, and your earphones are always on the noise cancellation mode.
+	
+But today, surprisingly, the underground doesn't feel particularly loud. You arrive at your friend's doorstep quickly.",
+
+	"Your friend is the kind of person who loves life and live in the moments.
+		
+The fridge is covered in magnets from lots of cities that have been visited.",
+	"Two cats in the house have opposite characteristics to yours, they are independent and quiet. There is also a height chart on the wall in the living room, marking your friend's height every year since childhood. Friends who are invited to the house sure need to do that as well. It's as the same as you first came over.
+		
+You love those tiny moments, they are very small, but they are the proof that you're connected with people, and sometimes things like that makes you sentimental.",
+	"You didn't snap out of it until your friend asks if you want something to drink.
+		
+The honey water is already handed to you as everytime you came over."
+	]
+	
+	# ===== V2 对话数据 =====
+	var v2_dialogues: Array[String] = [
+		"Time flies. You finish the lasagna and salad, a quite satisfying dinner you would say. Sometimes you think having a friend is such a blessing.
+
+At the very least, when you don't feel like cooking, you can have something to eat.",
+	"\"Ready to go?\"
+
+You glance at the clock on the wall.
+
+It has been quite a while.
+
+Is it time to say goodbye?"
+	]
+	
+	# ===== V3 对话数据 =====
+	var v3_dialogues: Array[String] = [
+		"You decide to stay here for longer. You haven't experienced this kind of peace in the past two weeks. You're greedy for more.
+
+By the way, this is something you didn't have before you two step back into friends \"again\".
+
+Back then, you were both too busy with your own careers, neglecting each other's feelings.",
+
+"When you said you were coming over tonight, he didn't ask any questions. Maybe it's the unspoken understanding you built over time. He made your favorite meal, picked up a movie gently and thoughtfully.
+
+What a sweet friend. A little ironic though.
+
+You two almost talked about everything tonight, movies, life, the present, the future.
+
+After all of it, you felt an ease you've never felt in a relatively long period.",
+	"\"Do you feel better tonight?\"
+	
+A simple question. But You don't really know.
+
+You don't know what comes next to be honest, only that your steps will be a little lighter when you leave.
+
+And that's all that matters."
+]
+	
+	dialogue_data_versions = [v1_dialogues, v2_dialogues, v3_dialogues]
+	
+	# ===== V1 选择数据（Watch/Chat）=====
+	var v1_choices = [
+		{
+			"text": "Watch a movie together?",
+			"effects": {},
+			"next_dialogue": "\"What brings you here tonight? Isn't your work busy this week? Do you wanna watch a movie?\"\n\nWhy not? This weather is perfect for sipping hot tea and watching a movie together. You two quickly picked one. Well, not \"you two\", it's your friend's decision. You're terrible at making choices. If it were up to you, you'd probably watch The Hunger Games for the millionth time. Or Interstellar. Again. Lame.\n\nThe movie ends quickly.\n\nBut you're not tired at all."
+		},
+		{
+			"text": "Let's chat instead",
+			"effects": {},
+			"next_dialogue": "Movies were never your thing anyway. You always watch the same ones you've seen a million times. The Hunger Games. Interstellar. You just want to have someone to talk tonight.\n\nYou two talk for hours.\n\nYou both love Camus. Those simple but philosophical lines in his Notebooks are something you both enjoy. Your favorite line is: \"Villages grounded around natural sites, each living its own life.\" Your friend's favorite is: \"What interests me is the weather. I'm going camping on Sunday.\" That difference shows you are two very different people to certain extent.\n\nYou two are keep talking. One subject after another No signs of stopping.\n\nYou didn't even notice how fast time passed."
+		}
+	]
+	
+	# ===== V2 选择数据（Yes/No to leaving）=====
+	var v2_choices = [
+		{
+			"text": "Time to go",
+			"effects": {},
+			"next_dialogue": "It's really the time to go. \n\nYou've spent enough time together today, at least you think so.\n\nYou decide to go somewhere else to get fresh air.",
+			"next_scene": "random_exit"  # 随机跳转
+		},
+		{
+			"text": "Stay longer",
+			"effects": {},
+			"next_dialogue": "You still want to stay longer with your friend. No one will get tired with their friends.\n\nEspecially at this moment you only want some company, that's all.",
+			"next_scene": "friend_house_v3"  # 跳转到V3
+		}
+	]
+	
+	# ===== V3 选择数据（Yes/Soso）=====
+	var v3_choices = [
+		{
+			"text": "I'm happy",
+			"effects": {},
+			"next_dialogue": "\"Yes.\"\n\nYou nodd but didn't say anything further, just hold his arm a little tighter. You've always loved moments like this a lot, being close together.\n\nHe strokes your head gently, like petting cats. You enjoy it. He does too. These moments that you don't feel anxious are rare.\n\nYou are completely relaxed here, and calm."
+		},
+		{
+			"text": "I'm alright",
+			"effects": {},
+			"next_dialogue": "\"I'm alright. No worries, just a bit too full.\"\n\nYou pick up the soduko by his bed and start solving it. You just don't feel like talking more.\n\nBut being next to each other helps you relax. And that's all you need for now."
+		}
+	]
+	
+	choice_data_versions = [v1_choices, v2_choices, v3_choices]
+
+# ===== V1 晚餐邀请对话 =====
+var v1_dinner_dialogue: Array[String] = [
+	"You're about to say you should go when your friend is walking to the kitchen and asking:
+		
+\"Do you want to stay for dinner?\""
+]
+
+# ===== V1 晚餐选择 =====
+var v1_dinner_choices = [
+	{
+		"text": "Why not?",
+		"effects": {},
+		"next_scene": "friend_house_v2",
+		"next_dialogue": "You accept your friend's dinner invitation. After all there's no way that you're cooking for yourself tonight.\n\nYou miss the salad made last time that you ate the entire portion by yourself. You also want to try the signature tomato beef lasagna as your friend boasted about it."  # ← 添加这行
+	},
+	{
+		"text": "I'm ok.",
+		"effects": {},
+		"next_scene": "random_exit",
+		"next_dialogue": "Maybe not today. Althought your friend asked you again and tryin to \"sell\" the cuisine.\n\nYou are just not in the mood for dinner tonight."  # ← 添加这行
+	}
+]
+
+# ===== V3 打盹后的对话 =====
+var v3_nap_dialogue: Array[String] = [
+		"Slowly, drowsiness creeps in. You fall asleep on the couch. But when you wake up, you've only been asleep for fifteen minutes.
+	
+Your sleep has been terrible this year. Falling asleep like this is already an extravagant hope.
+
+The nap after a full meal seems to have restored some of your energy. The peacefulness is the most soothing in your life. Perhaps you just need to let yourself rest for a while.
+
+Do you want to let the night end here?"
+]
+
+# ===== V3 最终选择（5个场景）=====
+var v3_final_choices = [
+	{
+		"text": "Ending here",
+		"effects": {},
+		"next_scene": "ending_placeholder",  # 暂时保留
+		"next_dialogue": "This ending is not implemented yet."
+	},
+	{
+		"text": "Maybe go to the seaside?",
+		"effects": {},
+		"next_scene": "seaside"
+	},
+	{
+		"text": "Maybe go to
+		the bar?",
+		"effects": {},
+		"next_scene": "yaki_bar"
+	},
+	{
+		"text": "Go back to apartment?",
+		"effects": {},
+		"next_scene": "apartment"
+	},
+	{
+		"text": "Facetime with parents?",
+		"effects": {},
+		"next_scene": "parents"
+	}
+]
+
+# ==================== 图片路径映射 ====================
+
+func get_choice_image_path(choice_text: String) -> String:
+	"""返回选项图片路径"""
+	var text_lower = choice_text.to_lower()
+	
+	var image_map = {
+		# V1 选择
+		"watch": "res://assets/choices/friend_house/friend_watch_movie.png",
+		"chat": "res://assets/choices/friend_house/friend_chat.png",
+		
+		# V1 晚餐
+		"why not": "res://assets/choices/friend_house/friend_yes.png",
+		"i'm ok": "res://assets/choices/friend_house/friend_no.png",
+		
+		# V2 留下吗
+		"time to go": "res://assets/choices/friend_house/friend_timetogo.png",
+		"stay longer": "res://assets/choices/friend_house/friend_staylonger.png",
+		
+		# V3 心情
+		"i'm happy": "res://assets/choices/friend_house/friend_happy.png",
+		"i'm alright": "res://assets/choices/friend_house/friend_soso.png",
+		
+		# V3 最终场景（复用opening图片）
+		"ending": "res://ending/ending.png",  # 需要新图
+		"seaside": "res://opening/seaside_opening.png",
+		"bar": "res://opening/bar_opening.png",  # 需要添加
+		"apartment": "res://opening/apartment_opening.png",
+		"parents": "res://opening/parents_opening.png"
+	}
+	
+	for key in image_map:
+		if key in text_lower:
+			return image_map[key]
+	
+	return "res://icon.png"
+	
+# ==================== 选择点击处理 ====================
+
+func _on_choice_input_event(viewport, event: InputEvent, shape_idx, choice_data_item: Dictionary):
+	"""处理所有选择的点击"""
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# ===== 添加调试代码 =====
+		print("\n=== CLICKED: %s ===" % choice_data_item.get("text", ""))
+		print("  current_version: ", current_version)
+		print("  choice_state: ", choice_state)
+		print("  next_scene: '%s'" % choice_data_item.get("next_scene", ""))
+		# ===== 调试代码结束 =====
+		
+		# 只有IDLE状态才能点击
+		if choice_state == ChoiceState.HOVER_ACTIVE or choice_state == ChoiceState.HOVER_FINISHED:
+			return
+		
+		get_viewport().set_input_as_handled()
+		
+		print("\n=== CLICKED: ", choice_data_item.get("text", ""), " ===")
+		
+		# 应用分数
+		if choice_data_item.has("effects"):
+			for stat in choice_data_item.effects:
+				if GM.stats.has(stat):
+					GM.stats[stat] += choice_data_item.effects[stat]
+		
+		choice_container.visible = false
+		choice_state = ChoiceState.CHOICE_MADE
+		
+		var next_scene = choice_data_item.get("next_scene", "")
+		
+		# === 处理特殊跳转 ===
+		
+		# V1: 跳转到V2
+		if next_scene == "friend_house_v2":
+			print("→ Jumping to Friend V2")
+			GM.change_scene("friend_house")
+			return
+		
+		# V2: 跳转到V3
+		if next_scene == "friend_house_v3":
+			print("→ Jumping to Friend V3")
+			GM.change_scene("friend_house")
+			return
+		
+		# 随机跳转（V1 No dinner / V2 Yes leave）
+		if next_scene == "random_exit":
+			print("→ Random exit")
+			_random_jump()
+			return
+		
+		# V3 最终场景跳转
+		if next_scene in ["seaside", "yaki_bar", "apartment", "parents"]:
+			print("→ Final jump to: ", next_scene)
+			GM.change_scene(next_scene)
+			return
+		
+		# V3 跳转到结局
+		if next_scene == "ending_placeholder":
+			print("→ Triggering ending")
+			GM.trigger_ending()  # ← 改这里！
+			return
+		
+		# === 根据版本决定下一步 ===
+		
+		if current_version == 1:
+			# V1: Watch/Chat 选择后 → 显示晚餐邀请
+			print("→ V1: Showing dinner invitation")
+			_show_v1_dinner_invitation()
+			
+		elif current_version == 2:
+			# V2: Yes/No 选择已处理next_scene，不应到这里
+			push_error("ERROR: V2 choice should have next_scene!")
+			
+		elif current_version == 3:
+			# V3: Yes/Soso 选择后 → 显示打盹对话 → 5个场景选择
+			print("→ V3: Showing nap dialogue")
+			_show_v3_nap_dialogue()
+
+# ==================== V1: 晚餐邀请 ====================
+
+func _show_v1_dinner_invitation():
+	"""V1: 显示晚餐邀请对话"""
+	dialogue_panel.visible = true
+	dialogue_segments = v1_dinner_dialogue
+	current_segment_index = 0
+	is_dialogue_finished = false
+	_start_next_segment()
+
+# ==================== V3: 打盹对话 ====================
+
+func _show_v3_nap_dialogue():
+	"""V3: 显示打盹对话"""
+	dialogue_panel.visible = true
+	dialogue_segments = v3_nap_dialogue
+	current_segment_index = 0
+	is_dialogue_finished = false
+	_start_next_segment()
+
+# ==================== 覆盖：显示选择 ====================
+
+func _show_choices():
+	"""根据当前状态显示对应的选择"""
+	
+	# ===== 添加调试代码 =====
+	print("\n========== _show_choices() CALLED ==========")
+	print("  current_version: ", current_version)
+	print("  dialogue_segments size: ", dialogue_segments.size())
+	print("  choice_nodes.size(): ", choice_nodes.size())
+	print("  choice_data.size() BEFORE: ", choice_data.size())
+	# ===== 调试代码结束 =====
+	
+	# 判断当前应该显示哪组选择
+	if current_version == 1:
+		# 检查是否是晚餐邀请后
+		if dialogue_segments == v1_dinner_dialogue:
+			print("[Friend V1] Showing dinner choices (Yes/No)")
+			choice_data = v1_dinner_choices
+		# 否则是初始选择
+		# （已在 choice_data_versions 中加载）
+	
+	elif current_version == 3:
+		# 检查是否是打盹后
+		if dialogue_segments == v3_nap_dialogue:
+			print("[Friend V3] Showing final 5 choices")
+			choice_data = v3_final_choices
+		# 否则是心情选择
+		# （已在 choice_data_versions 中加载）
+	
+		# ===== 添加调试代码 =====
+	print("  choice_data.size() AFTER: ", choice_data.size())
+	for i in range(choice_data.size()):
+		print("    [%d] %s" % [i, choice_data[i].get("text", "")])
+	# ===== 调试代码结束 =====
+	
+	# 调用父类显示
+	super._show_choices()
+	
+	# V3 最终选择需要5个节点，检查是否足够
+	if current_version == 3 and dialogue_segments == v3_nap_dialogue:
+		if choice_nodes.size() < 5:
+			push_error("ERROR: Friend V3 needs 5 Choice nodes for final selection!")
+
+# 设置目标显示尺寸（像素）
+	var target_size_px = 0.0
+	
+	# 根据版本和状态设置不同的目标尺寸
+	if current_version == 1:
+		if dialogue_segments == v1_dinner_dialogue:
+			# V1 晚餐选择：大一点
+			target_size_px = 600.0
+		else:
+			# V1 Watch/Chat：正常大小
+			target_size_px = 600.0
+	
+	elif current_version == 2:
+		# V2 离开选择：大一点
+		target_size_px = 600.0
+	
+	elif current_version == 3:
+		if dialogue_segments == v3_nap_dialogue:
+			# V3 最终5选1：小一点，因为要同时显示5个
+			target_size_px = 380.0
+		else:
+			# V3 心情选择：正常大小
+			target_size_px = 600.0
+	
+	# 应用动态缩放到所有可见的Choice
+	for node in choice_nodes:
+		if node.visible:
+			var img = node.get_node("ChoiceImage")
+			if img and img.texture:
+				# 获取原始纹理尺寸
+				var original_size = img.texture.get_size()
+				
+				# 计算缩放因子
+				if original_size.x > 0:
+					var scale_factor = target_size_px / original_size.x
+					img.scale = Vector2(scale_factor, scale_factor)
+					
+					print("[Scale] Choice image scaled to %.1fpx (factor: %.2f)" % [target_size_px, scale_factor])
+	# ========== 【动态缩放代码结束】 ==========
+	
+	# ========== 【添加宝丽来照片效果】 ==========
+	randomize()
+	
+	for i in range(choice_nodes.size()):
+		var node = choice_nodes[i]
+		if node.visible:
+			# 随机旋转
+			node.rotation_degrees = randf_range(-10.0, 10.0)
+			
+			# 位置微调（模拟随意摆放）
+			node.position += Vector2(
+				randf_range(-20, 20),  # X轴微调
+				randf_range(-20, 20)   # Y轴微调
+			)
+			
+			# Z轴深度感（可选）
+			node.z_index = randi() % 3  # 0, 1, 或 2
+			
+			print("[Polaroid] Choice%d: rotation=%.1f°, z_index=%d" % [i+1, node.rotation_degrees, node.z_index])
+	choice_state = ChoiceState.IDLE
+	# ========== 【宝丽来效果结束】 ==========
+
+	# 重置状态
+	choice_state = ChoiceState.IDLE
+	
+	# ===== 添加最终状态检查 =====
+	print("\n  === FINAL CHECK ===")
+	print("  choice_container.visible: ", choice_container.visible)
+	for i in range(choice_nodes.size()):
+		var node = choice_nodes[i]
+		if i < 5:  # 只检查前5个
+			print("  Choice%d: visible=%s, pos=%s" % [i+1, node.visible, node.position])
+			var img = node.get_node("ChoiceImage")
+			if img:
+				print("    → texture: %s" % ("EXISTS" if img.texture else "NULL"))
+	print("========== END ==========\n")
+	# ===== 调试代码结束 =====
+	
+# ===== 调试代码 =====
+	print("\n[DEBUG] After _show_choices():")
+	print("  current_version: ", current_version)
+	print("  choice_container.visible: ", choice_container.visible)
+	print("  choice_data.size(): ", choice_data.size())
+	
+	for i in range(choice_nodes.size()):
+		var node = choice_nodes[i]
+		print("  Choice%d:" % (i+1))
+		print("    visible: ", node.visible)
+		print("    position: ", node.position)
+		print("    z_index: ", node.z_index)
+		
+		var img = node.get_node("ChoiceImage")
+		if img:
+			print("    image.texture: ", "EXISTS" if img.texture else "NULL")
+			print("    image.visible: ", img.visible)
+			print("    image.scale: ", img.scale)  # ← 添加这行，查看缩放值
+		
+		var area = node.get_node("ClickArea")
+		if area:
+			print("    ClickArea.monitoring: ", area.monitoring)
+			print("    ClickArea.input_pickable: ", area.input_pickable)
+			var collision = area.get_node("CollisionShape2D")
+			if collision:
+				print("    CollisionShape disabled: ", collision.disabled)
+				print("    CollisionShape shape: ", collision.shape)
+			else:
+				print("    CollisionShape: NOT FOUND!")
+		else:
+			print("    ClickArea: NOT FOUND!")
+	print("===== DEBUG END =====\n")
+	# ===== 调试代码结束 =====
+	
+# ==================== 随机跳转 ====================
+
+func _random_jump():
+	"""50%跳转Seaside，50%跳转Apartment"""
+	randomize()
+	if randf() < 0.5:
+		print("  → Random result: Seaside")
+		GM.change_scene("seaside")
+	else:
+		print("  → Random result: Apartment")
+		GM.change_scene("apartment")
