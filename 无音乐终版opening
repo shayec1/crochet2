@@ -1,0 +1,824 @@
+extends Node2D
+
+# ==================== 场景状态 ====================
+enum State {
+	INTRO,
+	WAITING_DIALOGUE_CLICK,
+	WAITING_CLICK,
+	IMAGES_REVEAL,
+	IMAGES_INTERACTION,
+	WAITING_DESCRIPTION_DISMISS, # 【新增状态】等待玩家点击以消除描述文本
+	FINAL_TEXT_1,
+	FINAL_TEXT_2,
+	FINAL_IMAGES_INTERACTION, # 最终图片互动阶段
+	TRANSITIONING
+}
+
+var current_state = State.INTRO
+var clicked_images = [] # 记录已点击的图片
+var intro_dialogue_array = [] # 新增一个数组变量
+var current_dialogue_index: int = 0         # 新增一个索引变量
+var _current_highlighted_image: Sprite2D = null # 【新增变量】记录当前高亮的图片节点
+var final_text_dialogue_array = [] # 【新增】final_text_1 的分段数组
+var current_final_text_index: int = 0 # 【新增】final_text_1 的当前索引
+var final_text_ready: bool = false # 【新增】：标记所有图片是否至少点击过一次
+var final_prompt_text: String = "Where you want to start?"
+var final_images: Array = []
+
+# ==================== 节点引用 (路径修正 & Godot 4 语法) ====================
+@onready var game_manager = get_node("/root/GameManager")
+@onready var background = $Background
+@onready var intro_container = $IntroContainer
+@onready var intro_panel = $IntroContainer/IntroPanel
+@onready var intro_text = $IntroContainer/IntroPanel/IntroText
+@onready var image_container = $ImageContainer
+@onready var final_container = $FinalContainer
+@onready var final_panel = $FinalContainer/FinalPanel
+@onready var final_text = $FinalContainer/FinalPanel/FinalText
+#@onready var clickable_text = $FinalContainer/FinalPanel/ClickableText # (现在用来显示提示语)
+@onready var final_image_container = $FinalImageContainer
+
+# 四张图片节点 (Sprite2D)
+@onready var image_parents = $ImageContainer/ImageParents
+@onready var image_work = $ImageContainer/ImageWork
+@onready var image_cat = $ImageContainer/ImageCat
+@onready var image_relationship = $ImageContainer/ImageRelationship
+
+# 五张图片跳转场景节点 (Sprite2D)
+@onready var img_seaside = $FinalImageContainer/ImageSeaside
+@onready var img_bar = $FinalImageContainer/ImageBar
+@onready var img_apartment = $FinalImageContainer/ImageApartment
+@onready var img_friend = $FinalImageContainer/ImageFriend
+@onready var img_parents = $FinalImageContainer/ImageParents
+
+# 图片描述容器
+@onready var description_container = $DescriptionContainer
+@onready var description_panel = $DescriptionContainer/DescriptionPanel
+@onready var description_text = $DescriptionContainer/DescriptionPanel/DescriptionText # 假设这是 RichTextLabel
+
+# 点击检测区域（Area2D）
+@onready var click_area_parents = $ImageContainer/ImageParents/ClickArea as Area2D
+@onready var click_area_work = $ImageContainer/ImageWork/ClickArea as Area2D
+@onready var click_area_cat = $ImageContainer/ImageCat/ClickArea as Area2D
+@onready var click_area_relationship = $ImageContainer/ImageRelationship/ClickArea as Area2D
+
+# ==================== 文本内容 (完整) ====================
+var intro_dialogue = """You are Evelyn.
+
+This is just another boring and tired evening after work.
+
+After the clock fell back last weekend, you feel unbearable about the coming winter again, just like every year before.
+
+This feeling is especially strong this year when all your friends decided to move back closer to their families after their postgraduate studies, but you chose to stay here.
+
+You always live with the idea that you had to do something in life and more exactly that, because you are poor (at least you think so), you had to earn a living, get a job and settle down.
+
+Lately the work has been crazy.
+
+But do you think that’s really busy enough to you?
+
+No.
+
+That’s why you are working as a part-time barista as well because you’re so terrified of going broke one day.
+
+Living in the moment has never been part of your mindset.
+
+Maybe the idea only appeared and last for a split second before you fell asleep."""
+
+var image_descriptions = {
+	"parents": "Your parents are ten thousand kilometres away.
+    
+Although you facetime with them every day, to be honest, it can’t really help much.
+    
+Not mention that you only tell them the good news and never the bad. They are genuinely caring about you and they’ve never put pressure on your which only makes your guilt worse.
+    
+That’s why you feel like you should settle down earlier, but settlement is a too grand concept for someone in their earlier twenties, it is too abstract to grasp, too overwhelming.",
+	"work": "Your working rights, plans, social life and financial situation, everything just piles up at once. You often feel utterly powerless, so you push yourself three times harder.
+
+In this state, the news told you have been diagnosed with stomach cancer was the final blow. You’re not surprised at all though. You know there is still a good chance for receiving treatment from now.
+
+But a small idea hit you, “what if my life can just end here?” Saying want to give up on life to yourself has become your routine recently.",
+	"cat": "You live with your cat in a small apartment tucked away at the corner of the city. The place is quiet most of the time, except for the soft padding of her paws against the wooden floor. The rooms are narrow, the walls close in a little too much, and there’s always something slightly out of place, a cup on the desk half-filled with cold coffee, a stack of clothes waiting to be folded, a book left open somewhere in the middle.
+
+Your cat doesn’t mind the mess. She climbs onto the windowsill every morning to chase the faint light that slips through the blinds. She meows when she is hungry, also when she is not hungry.
+
+Sometimes you think the apartment is too small for two living beings. The air feels dense, almost heavy, especially at night when the world outside hums faintly through the thin walls. You think after all you cannot make this small place called as home.",
+	"relationship": "You had a relationship not very long ago. In the beginning, everything felt light and blessing. You’d stay up late talking about meaningless things, share playlists, argue about which pasta sauce was better, and laugh about how similar your morning routines were.
+    
+There were no real fights, just a growing distance disguised as silence. Messages turned shorter, calls became rarer, and both of you learned to fill the gaps with something else and that mostly is work. Sometimes you wonder if things could have gone differently, if either of you had tried a little harder or spoken a little sooner. You miss the simple comfort of having someone who would listen to your ramblings and remind you to buy fresh milk on the way home.
+
+But it just fizzled out, otherwise you’d at least have someone to lean on."
+	# 请确保您在代码中加入了这四段文本，特别是 "relationship"
+}
+
+var final_text_1 = """There are eight hours left until midnight.
+
+Each movement will take you two hours, which means you can go up to four places.
+
+You can experience things you like over and over again.
+
+You can also choose those things that you’ve never dared, never tried or simply never wanted to experience in the past.
+
+But you can not go back.
+
+This will be your last eight hours here, or you decide to live longer after eight hours?
+
+So where do you wanna go now?"""
+
+var final_text_2 = "[center]Where do you want to start?\n\n[url=restaurant]The restaurant you always go?[/url] Have a [url=facetime]facetime[/url] with parents as always? Crawl into your [url=bed]bed[/url]? Go to the [url=seaside]seaside?[/url] Or maybe visit a [url=friend]friend?[/url][/center]"
+
+var scene_links = {
+	"restaurant": "yaki_bar",
+	"facetime": "parents",
+	"bed": "apartment",
+	"seaside": "seaside",
+	"friend": "friend_house"
+}
+
+# ==================== 初始化 ====================
+func _ready():
+	
+	final_images = [img_seaside, img_bar, img_apartment, img_friend, img_parents]
+	# 【新增调试代码 - 检查关键节点是否为 null】
+	if not is_instance_valid(background):
+		push_error("ERROR: background node is null!")
+	if not is_instance_valid(intro_container):
+		push_error("ERROR: intro_container node is null!")
+	if not is_instance_valid(image_container):
+		push_error("ERROR: image_container node is null!")
+	# ...
+	# 拆分大段文本
+	intro_dialogue_array = intro_dialogue.split("\n\n", false)
+	# 【新增】：拆分 final_text_1
+	final_text_dialogue_array = final_text_1.split("\n\n", false)
+	# ...
+	start_intro()
+	
+	# ------------------------------------------
+	# 设置初始状态
+	setup_initial_state()
+	# 开始介绍文字
+	start_intro()
+
+func setup_initial_state():
+	"""设置初始显示状态"""
+	# 隐藏所有容器
+	image_container.visible = false
+	image_container.modulate.a = 0
+	final_container.visible = false
+	description_container.visible = false
+	
+	# 设置图片初始状态（暗淡）
+	var all_images = [image_parents, image_work, image_cat, image_relationship]
+	for img in all_images:
+		img.modulate = Color(0.7, 0.7, 0.7, 1)
+		# img.scale = Vector2(1, 1)
+	
+	# 背景完全可见，初始颜色设置为深色或原始颜色
+	background.modulate = Color(1, 1, 1, 1)
+	
+	# 设置点击区域信号
+	setup_click_areas()
+
+func setup_click_areas():
+	"""设置Sprite2D的点击区域信号"""
+	click_area_parents.input_event.connect(Callable(self, "_on_area_clicked").bind("parents", image_parents))
+	click_area_parents.mouse_entered.connect(Callable(self, "_on_area_hover").bind(image_parents, true))
+	click_area_parents.mouse_exited.connect(Callable(self, "_on_area_hover").bind(image_parents, false))
+	
+	click_area_work.input_event.connect(Callable(self, "_on_area_clicked").bind("work", image_work))
+	click_area_work.mouse_entered.connect(Callable(self, "_on_area_hover").bind(image_work, true))
+	click_area_work.mouse_exited.connect(Callable(self, "_on_area_hover").bind(image_work, false))
+	
+	click_area_cat.input_event.connect(Callable(self, "_on_area_clicked").bind("cat", image_cat))
+	click_area_cat.mouse_entered.connect(Callable(self, "_on_area_hover").bind(image_cat, true))
+	click_area_cat.mouse_exited.connect(Callable(self, "_on_area_hover").bind(image_cat, false))
+	
+	click_area_relationship.input_event.connect(Callable(self, "_on_area_clicked").bind("relationship", image_relationship))
+	click_area_relationship.mouse_entered.connect(Callable(self, "_on_area_hover").bind(image_relationship, true))
+	click_area_relationship.mouse_exited.connect(Callable(self, "_on_area_hover").bind(image_relationship, false))
+
+# ==================== 介绍阶段 ====================
+func start_intro():
+	"""开始播放介绍文字，并让背景变亮 (对应需求 1)"""
+	current_state = State.INTRO
+	current_dialogue_index = 0
+	
+	# 背景变亮效果（模拟蒙版）
+	var bg_light_tween = create_tween()
+	bg_light_tween.tween_property(background, "modulate", Color(0.7, 0.7, 0.7, 0.7), 1.5)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	
+	# 【新增：背景动画后等待 2.0 秒】
+	await get_tree().create_timer(2.0).timeout
+	
+	# 确保从第一段开始 (此处假设 current_dialogue_index 已在 _ready 中重置)
+	current_dialogue_index = 0
+	
+	# 开始打印第一段
+	intro_text.start_typing(intro_dialogue_array[current_dialogue_index])
+	
+	if not intro_text.typing_finished.is_connected(Callable(self, "_on_intro_finished")):
+		intro_text.typing_finished.connect(Callable(self, "_on_intro_finished"))
+
+func _on_intro_finished():
+	"""一段文字播放完成，等待点击或进入下一阶段"""
+	
+	if current_dialogue_index < intro_dialogue_array.size() - 1:
+		# 还有下一段，切换到等待玩家点击继续的状态
+		current_state = State.WAITING_DIALOGUE_CLICK
+		print("DEBUG: Dialogue segment finished. Waiting for click to continue.")
+		
+	else:
+		# 所有段落播放完成，进入等待点击图片阶段
+		current_state = State.WAITING_CLICK
+		print("DEBUG: All dialogue finished. State changed to WAITING_CLICK.")
+
+func _start_next_dialogue_segment():
+	"""控制当前文本淡出和下一段文本的开始"""
+	current_state = State.INTRO # 再次进入 INTRO 状态 (打字中)
+	
+	# 1. 淡出当前文本
+	var fade_out_tween = create_tween()
+	fade_out_tween.tween_property(intro_text, "modulate:a", 0, 0.5)
+	
+	await fade_out_tween.finished
+	
+	# 2. 隐藏文字内容，重置透明度，更新索引
+	intro_text.modulate.a = 1
+	current_dialogue_index += 1
+	
+	# 3. 播放下一段
+	intro_text.start_typing(intro_dialogue_array[current_dialogue_index])
+			
+# ==================== 图片揭示阶段 ====================
+func reveal_images():
+	"""隐藏介绍文字和变亮的背景，显示三张图片 (对应需求 2)"""
+	current_state = State.IMAGES_REVEAL
+	print("DEBUG: Entering IMAGES_REVEAL state. Images should appear now.")
+	
+	var fade_tween = create_tween()
+	
+	# 1. 介绍文字容器淡出
+	fade_tween.tween_property(intro_panel, "modulate:a", 0, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	
+	# 2. 背景变暗 (回到原始颜色 1, 1, 1, 1)
+	fade_tween.tween_property(background, "modulate", Color(1, 1, 1, 1), 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	
+	await fade_tween.finished
+	
+	# 隐藏 IntroContainer（CanvasLayer）
+	intro_container.visible = false
+	
+	# 显示图片容器
+	image_container.visible = true
+	
+	# 图片淡入
+	var reveal_tween = create_tween()
+	reveal_tween.tween_property(image_container, "modulate:a", 1, 1.5).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	
+	await reveal_tween.finished
+	
+	# 启用图片交互
+	current_state = State.IMAGES_INTERACTION
+	print("DEBUG: Entering IMAGES_INTERACTION state. Ready for image clicks.")
+
+# ==================== 图片交互 ====================
+# Opening.gd 脚本中 (替换现有的 _on_area_hover 函数)
+func _on_area_hover(image: Sprite2D, is_hovering: bool):
+	"""图片悬停效果 (只有在未被点击高亮时才响应 hover)"""
+	if current_state != State.IMAGES_INTERACTION:
+		return
+	
+	# 【关键修正】：如果当前图片是高亮状态，则不响应 hover
+	if is_instance_valid(_current_highlighted_image) and _current_highlighted_image == image:
+		return
+	
+	var tween = create_tween()
+	
+	if is_hovering:
+		# 悬停：亮度提升
+		tween.tween_property(image, "modulate", Color(1.1, 1.1, 1.1, 1), 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	else:
+		# 离开：恢复暗淡
+		tween.tween_property(image, "modulate", Color(0.7, 0.7, 0.7, 1), 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+# Opening.gd 脚本中 (替换现有的 _on_area_clicked 函数)
+func _on_area_clicked(_viewport: Node, event: InputEvent, _shape_idx: int, image_key: String, image: Sprite2D):
+	"""处理图片点击。允许重复唤起，但只记录一次点击状态"""
+	
+	if current_state != State.IMAGES_INTERACTION:
+		return
+	
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		
+		# 1. 【高亮图片】：立即设置高亮
+		# 在重复点击时，这只会刷新高亮效果
+		if is_instance_valid(_current_highlighted_image):
+			# 如果之前有图片高亮，先恢复其状态（避免多个高亮）
+			_current_highlighted_image.modulate = Color(0.7, 0.7, 0.7, 1)
+
+		_current_highlighted_image = image
+		var highlight_tween = create_tween()
+		highlight_tween.tween_property(image, "modulate", Color(1.1, 1.1, 1.1, 1), 0.1)
+			
+		# 2. 【关键修正】：只在第一次点击时记录
+		if not clicked_images.has(image_key):
+			clicked_images.append(image_key)
+			
+		# 3. 显示描述 (现在使用打字机)
+		show_image_description(image_key, image)
+		
+		# 4. 检查是否所有图片都已点击 (此时不用等待，在 hide_description 后检查)
+		# 移除 await get_tree().create_timer(0.5).timeout
+		
+		get_viewport().set_input_as_handled()
+		
+# Opening.gd 脚本中 (替换现有的 show_image_description 函数)
+func show_image_description(image_key: String, image: Sprite2D):
+	"""显示图片描述 (背景变暗，使用打字机效果)"""
+	
+	# 1. 背景变暗
+	var bg_tween = create_tween()
+	bg_tween.tween_property(background, "modulate", Color(0.3, 0.3, 0.3, 1), 0.5)
+	
+	# 2. 图片高亮效果：点击时保持高亮 (已在 _on_area_clicked 中处理)
+
+	# 3. 显示容器并淡入面板
+	description_container.visible = true
+	description_panel.modulate.a = 0
+	
+	var fade_tween = create_tween()
+	fade_tween.tween_property(description_panel, "modulate:a", 1, 0.5).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	
+	await fade_tween.finished
+	
+	# 4. 【关键修正】：使用打字机效果
+	description_text.start_typing(image_descriptions[image_key])
+	
+	# 5. 【关键修正】：等待打字机完成信号，然后进入等待消失状态
+	# 注意：这里需要确保信号连接，如果每次都连接，请确保先断开
+	if description_text.typing_finished.is_connected(Callable(self, "_on_description_typing_finished")):
+		description_text.typing_finished.disconnect(Callable(self, "_on_description_typing_finished"))
+		
+	description_text.typing_finished.connect(Callable(self, "_on_description_typing_finished"))
+	
+	# 此时状态应保持 IMAGES_INTERACTION，打字机内部处理
+	pass # 等待信号触发状态转换
+
+# Opening.gd 脚本中 (新的辅助函数)
+func _on_description_typing_finished():
+	"""描述文本打字完成，进入等待点击消失的状态"""
+	current_state = State.WAITING_DESCRIPTION_DISMISS
+	print("DEBUG: Description typing finished. Waiting for click to dismiss.")
+	
+func get_image_name(image: Sprite2D) -> String:
+	"""
+		辅助函数：获取 Sprite2D 节点的名称。
+		用于将节点实例转换为字符串键值。
+	"""
+	# Sprite2D 节点的 name 属性即为场景树中的节点名称
+	return image.name
+	
+# Opening.gd 脚本中 (替换现有的 hide_description 函数)
+func hide_description():
+	"""隐藏描述面板，恢复背景和高亮，并返回图片交互状态"""
+	
+	# 1. 背景恢复正常亮度
+	var bg_tween = create_tween()
+	bg_tween.tween_property(background, "modulate", Color(1, 1, 1, 1), 0.3)
+	
+	# 2. 描述面板淡出
+	description_text.text = ""
+	var fade_tween = create_tween()
+	fade_tween.tween_property(description_panel, "modulate:a", 0, 0.3).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	
+	# 3. 恢复图片高亮（如果存在）
+	if is_instance_valid(_current_highlighted_image):
+		var highlight_tween = create_tween()
+		highlight_tween.tween_property(_current_highlighted_image, "modulate", Color(0.7, 0.7, 0.7, 1), 0.3)
+		_current_highlighted_image = null
+		
+	await fade_tween.finished
+
+	# 4. 隐藏 CanvasLayer 容器
+	description_container.visible = false
+	
+	# 5. 【关键修正】：检查并设置 Final Text 准备状态
+	if clicked_images.size() >= 4:
+		# 如果所有图片都已点击，设置 flag
+		final_text_ready = true
+		print("DEBUG: All images viewed. Final Text is ready to be triggered by general click.")
+	
+	# 【核心改变】：无论是否准备好 Final Text，都返回图片交互状态
+	current_state = State.IMAGES_INTERACTION
+	
+# ==================== 最终文字阶段 ====================
+
+func show_final_text_1():
+	"""显示最终文字第一段 (背景变暗，开始分段打字)"""
+	# 状态设置为 FINAL_TEXT_1，表示正在处理这个阶段的打字和点击
+	current_state = State.FINAL_TEXT_1
+	current_final_text_index = 0
+	
+	var fade_tween = create_tween()
+	
+	# 1. 淡出图片容器
+	fade_tween.tween_property(image_container, "modulate:a", 0, 1.0)
+	
+	# 2. 背景变暗
+	fade_tween.tween_property(background, "modulate", Color(0.3, 0.3, 0.3, 1), 1.0)
+	
+	await fade_tween.finished
+	
+	image_container.visible = false
+	
+	# 3. 显示最终文字容器
+	final_container.visible = true
+	final_panel.modulate.a = 0 # FinalPanel 淡入淡出
+	final_text.visible = true
+	final_text.text = "" # 确保文本为空，防止瞬间闪烁
+	# clickable_text.visible = false
+	
+	var text_tween = create_tween()
+	text_tween.tween_property(final_panel, "modulate:a", 1, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	
+	await text_tween.finished
+	
+	# 4. 【关键修正】：开始打字第一段
+	_start_next_final_text_segment()
+	
+	# 5. 连接信号 (如果信号已连接，先断开)
+	if final_text.typing_finished.is_connected(Callable(self, "_on_final_text_1_segment_finished")):
+		final_text.typing_finished.disconnect(Callable(self, "_on_final_text_1_segment_finished"))
+		
+	final_text.typing_finished.connect(Callable(self, "_on_final_text_1_segment_finished"))
+	
+	print("DEBUG: Final Text 1 typing started (Segment 1).")
+
+func _start_next_final_text_segment():
+	"""开始下一段 final_text_1 的打字"""
+	
+	if current_final_text_index < final_text_dialogue_array.size():
+		current_state = State.FINAL_TEXT_1 # 保持或重置为打字状态
+		
+		# 1. 淡出当前文本（如果有）
+		var fade_out_tween = create_tween()
+		fade_out_tween.tween_property(final_text, "modulate:a", 0, 0.5)
+		await fade_out_tween.finished
+		
+		# 2. 播放下一段
+		final_text.modulate.a = 1 # 恢复透明度
+		final_text.start_typing(final_text_dialogue_array[current_final_text_index])
+		
+		current_final_text_index += 1
+	else:
+		# 【关键修正】：当没有下一段时，调用 _on_final_text_1_segment_finished 
+		# 来确保状态能够被正确切换到 WAITING_CLICK，即使没有打字事件发生。
+		_on_final_text_1_segment_finished()
+
+func _on_final_text_1_segment_finished():
+	"""Final Text 1 一段打字完成，等待点击继续或进入下一阶段"""
+	
+	# 【关键修正】：状态保护，确保只在 FINAL_TEXT_1 状态下处理
+	if current_state != State.FINAL_TEXT_1:
+		return
+		
+	if current_final_text_index < final_text_dialogue_array.size():
+		# 还有下一段，切换到等待玩家点击继续的状态
+		current_state = State.WAITING_DIALOGUE_CLICK
+		print("DEBUG: Final Text 1 segment finished. Waiting for click to continue.")
+	else:
+		# 所有段落都已播放，确保状态最终切换到 WAITING_CLICK，等待 Final Text 2
+		current_state = State.WAITING_CLICK
+		print("DEBUG: All Final Text 1 segments finished. State changed to WAITING_CLICK for Final Text 2.")
+		
+func _on_final_text_1_finished():
+	"""Final Text 1 打字完成，准备等待点击进入下一段"""
+	current_state = State.WAITING_CLICK
+	print("DEBUG: Final Text 1 typing finished. State changed to WAITING_CLICK.")
+	
+# ==================== 最终文字阶段 (接在 show_final_text_1() 之后) ====================
+
+func show_final_text_2():
+	"""显示提示语，隐藏 Final Text 1 容器，并淡入五张互动图片"""
+	
+	# 1. 状态设置为新的互动状态
+	current_state = State.FINAL_IMAGES_INTERACTION
+	
+	# 2. 隐藏 Final Text 1 容器 (FinalPanel)
+	var panel_fade_out_tween = create_tween()
+	panel_fade_out_tween.tween_property(final_panel, "modulate:a", 0, 0.5)
+	
+	await panel_fade_out_tween.finished
+	
+	final_panel.visible = false # 彻底隐藏旧的 FinalPanel 容器
+	
+	# 3. 现在使用 final_text 节点显示提示语 ("Where you want to start?")
+	final_text.visible = true
+	final_text.text = final_prompt_text # final_prompt_text 包含 "Where you want to start?"
+	final_text.modulate.a = 0
+	
+	var prompt_tween = create_tween()
+	prompt_tween.tween_property(final_text, "modulate:a", 1, 1.0)
+	
+	# 4. 设置背景到中性值 (因为悬停效果需要从这个值开始变暗/恢复)
+	background.modulate = Color(0.3, 0.3, 0.3, 1)
+	
+	# 5. 淡入五张互动图片 (FinalImageContainer)
+	
+	final_image_container.visible = true
+	final_image_container.modulate.a = 0
+	
+	var container_fade_in_tween = create_tween()
+	container_fade_in_tween.tween_property(final_image_container, "modulate:a", 1, 1.0)
+	
+	var image_tween = create_tween()
+	
+	for i in range(final_images.size()):
+		var img = final_images[i] as Sprite2D
+		img.modulate.a = 0
+		img.visible = true
+		
+		# 依次淡入，增加视觉效果
+		image_tween.tween_property(img, "modulate:a", 1, 0.5).set_delay(i * 0.2)
+		
+		# 【关键】：连接交互信号
+		var area = img.get_node("ClickArea") as Area2D
+		var label_node = img.get_node("Label") as Label
+		
+		if is_instance_valid(area) and is_instance_valid(label_node):
+			
+			# --- 悬停开始信号连接 ---
+			# 【重要修改】：bind(label_node, img) 将两个节点作为参数传递给处理函数
+			if not area.mouse_entered.is_connected(Callable(self, "_on_final_image_mouse_entered").bind(label_node, img)):
+				area.mouse_entered.connect(Callable(self, "_on_final_image_mouse_entered").bind(label_node, img))
+				
+			# --- 悬停结束信号连接 ---
+			if not area.mouse_exited.is_connected(Callable(self, "_on_final_image_mouse_exited").bind(label_node, img)):
+				area.mouse_exited.connect(Callable(self, "_on_final_image_mouse_exited").bind(label_node, img))
+			
+			# --- 点击信号连接 (跳转) ---
+			if not area.input_event.is_connected(Callable(self, "_on_final_image_input").bind(img.name)):
+				area.input_event.connect(Callable(self, "_on_final_image_input").bind(img.name))
+			
+	print("DEBUG: Final images revealed and ready for interaction.")
+	
+#func setup_clickable_text():
+#    """设置可点击的文字"""
+#    clickable_text.bbcode_enabled = true
+#    # 确保 final_text_2 是一个 RichText 兼容的字符串（BBCode）
+#    clickable_text.text = final_text_2 
+	
+	# 连接信号，处理点击和悬停
+	# RichTextLabel 的信号在 Godot 4 中需要这样连接：
+#    clickable_text.meta_clicked.connect(Callable(self, "_on_link_clicked"))
+#    clickable_text.meta_hover_started.connect(Callable(self, "_on_link_hover_started"))
+#    clickable_text.meta_hover_ended.connect(Callable(self, "_on_link_hover_ended"))
+
+#func _on_link_hover_started(meta):
+#    """链接悬停开始"""
+#    # 更改鼠标光标形状
+#    clickable_text.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+#func _on_link_hover_ended(meta):
+#    """链接悬停结束"""
+#    # 恢复默认光标形状
+#    clickable_text.mouse_default_cursor_shape = Control.CURSOR_ARROW
+
+#func _on_link_clicked(meta):
+#    """处理链接点击，触发场景跳转"""
+#    if current_state != State.FINAL_TEXT_2:
+#        return
+	
+#    # meta 是我们在 final_text_2 中设置的 URL 字符串 (如 "restaurant")
+#    var scene_name = scene_links.get(String(meta), "")
+#    if scene_name != "":
+#        transition_to_scene(scene_name)
+
+func transition_to_scene(scene_name: String):
+	"""转换到游戏场景"""
+	current_state = State.TRANSITIONING
+	
+	# 场景整体淡出
+	var fade_tween = create_tween()
+	fade_tween.tween_property(self, "modulate:a", 0, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	
+	await fade_tween.finished
+	
+	# 假设 GameManager 负责场景切换逻辑
+	# 请确保您已经创建并设置了 /root/GameManager 单例或自动加载脚本
+	if is_instance_valid(game_manager):
+		# game_manager.reset_game() # 如果需要重置，请取消注释
+		game_manager.load_next_scene(scene_name)
+	else:
+		# 如果没有 GameManager，直接切换场景（需要完整的场景文件路径）
+		get_tree().change_scene_to_file("res://scenes/games/" + scene_name + ".tscn") # 假设场景路径
+
+# ==================== 输入处理 (最终合并版本) ====================
+
+# 【核心修复】：函数签名现在接受 Area2D 信号发送的所有 4 个参数，并忽略不需要的
+func _on_final_image_input(viewport, event: InputEvent, shape_idx, image_name: String):
+	"""点击最终图片，进行场景跳转"""
+	
+	# 诊断打印 (保留用于确认信号是否触发)
+	print("DEBUG: Click signal received for: " + image_name)
+
+	# 1. 状态检查
+	if current_state != State.FINAL_IMAGES_INTERACTION:
+		return
+		
+	# 2. 事件检查：确保是鼠标左键按下
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# 标记事件已处理
+		get_viewport().set_input_as_handled()
+		
+		var next_scene_path = ""
+		
+		# 3. 场景路径匹配
+		match image_name:
+			"ImageSeaside":
+				next_scene_path = "res://Scenes/seaside.tscn"
+			"ImageBar":
+				next_scene_path = "res://Scenes/yaki_bar.tscn"
+			"ImageApartment":
+				next_scene_path = "res://Scenes/apartment.tscn"
+			"ImageFriend":
+				next_scene_path = "res://Scenes/friend_house.tscn"
+			"ImageParents":
+				next_scene_path = "res://Scenes/parents.tscn"
+			_:
+				push_error("Error: Unknown final image clicked: " + image_name)
+				return
+
+		# 4. 执行场景跳转
+		if next_scene_path != "":
+			print("DEBUG: Executing scene change to: " + next_scene_path)
+			get_tree().change_scene_to_file(next_scene_path)
+
+func _on_final_image_mouse_entered(label_node: Label, image_node: Sprite2D):
+	"""鼠标悬停在图片上时：显示 Label，图片变暗 (使用 self_modulate 避免影响子节点)"""
+	if current_state == State.FINAL_IMAGES_INTERACTION:
+		
+		# 1. 显示 Label 文本 (保持不变)
+		var label_tween = create_tween()
+		label_tween.tween_property(label_node, "modulate:a", 1, 0.2)
+		
+		# 2. 【核心修改】：使用 self_modulate 降低图片亮度，不影响子节点 (Label)
+		var img_tween = create_tween()
+		img_tween.tween_property(image_node, "self_modulate", Color(0.5, 0.5, 0.5, 1), 0.2)
+		
+		# 3. 背景恢复亮度 (保持不变)
+		var bg_tween = create_tween()
+		bg_tween.tween_property(background, "modulate", Color(0.3, 0.3, 0.3, 1), 0.3)
+
+func _on_final_image_mouse_exited(label_node: Label, image_node: Sprite2D):
+	"""鼠标离开图片时：隐藏 Label，图片恢复亮度 (使用 self_modulate 避免影响子节点)"""
+	if current_state == State.FINAL_IMAGES_INTERACTION:
+		
+		# 1. 隐藏 Label 文本 (保持不变)
+		var label_tween = create_tween()
+		label_tween.tween_property(label_node, "modulate:a", 0, 0.2)
+		
+		# 2. 【核心修改】：使用 self_modulate 恢复图片为正常亮度 (Color(1, 1, 1, 1))
+		var img_tween = create_tween()
+		img_tween.tween_property(image_node, "self_modulate", Color(1, 1, 1, 1), 0.2)
+		
+		# 3. 背景保持中性值 (保持不变)
+		var bg_tween = create_tween()
+		bg_tween.tween_property(background, "modulate", Color(0.3, 0.3, 0.3, 1), 0.3)
+		 
+func _input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		
+		# 优先级 A: 【描述文本打字中】
+		if description_container.visible and description_text.is_typing():
+			if not description_text.is_skipped:
+				# 第一次点击：跳过打字动画
+				description_text.skip_to_end()
+			else:
+				# 第二次点击：结束打字并进入等待消失状态
+				description_text.finish_typing()
+			
+			get_viewport().set_input_as_handled()
+			return # 停止处理
+			
+		# 优先级 B: 【处理描述文本已完成/等待消失的状态】
+		elif current_state == State.WAITING_DESCRIPTION_DISMISS:
+			# 只有在这个状态下，点击才会隐藏描述面板
+			hide_description()
+			get_viewport().set_input_as_handled()
+			return # 停止处理
+			
+		# 优先级 C: 【Final Text 1 打字中】
+		elif current_state == State.FINAL_TEXT_1 and final_text.is_typing():
+			if not final_text.is_skipped:
+				# 第一次点击：跳过打字动画
+				final_text.skip_to_end()
+			else:
+				# 第二次点击：结束打字并进入下一流程
+				final_text.finish_typing()
+				
+			get_viewport().set_input_as_handled()
+			return # 停止处理
+
+		# 优先级 D: 【INTRO 阶段】
+		elif current_state == State.INTRO:
+			if intro_text.is_typing() and not intro_text.is_skipped:
+				# 1. 第一次点击：跳过 Intro 打字动画
+				intro_text.skip_to_end()
+			elif intro_text.is_skipped:
+				# 2. 第二次点击：继续 Intro 流程
+				handle_click()
+			get_viewport().set_input_as_handled()
+			return # 停止处理
+			
+		# Opening.gd 脚本中 (从 优先级 E 之后开始替换，确保缩进正确)
+
+		# 优先级 E: 【图片交互状态】
+		elif current_state == State.IMAGES_INTERACTION:
+			# 【核心修正】：我们只有在 final_text_ready 为 true 时，才捕获并处理通用点击。
+			# 否则，允许事件继续向下传递，让 Area2D 优先处理。
+			
+			if final_text_ready:
+				# 1. Final Text 流程准备就绪，通用点击触发 Final Text
+				handle_click()
+				get_viewport().set_input_as_handled()
+				return # 停止处理
+			else:
+				# 2. Final Text 流程未准备好：允许事件继续向下传递 (到 Area2D)
+				pass
+				
+		# 优先级 F: 【通用等待点击状态】
+		elif current_state == State.WAITING_CLICK or current_state == State.WAITING_DIALOGUE_CLICK:
+			handle_click()
+			get_viewport().set_input_as_handled()
+			return # 停止处理
+			
+		# 优先级 G: 【Final Text 2 (链接) 状态】
+		elif current_state == State.FINAL_TEXT_2:
+			 # 链接点击由 RichTextLabel 的 meta_clicked 信号处理
+			pass
+			 
+		# 优先级 H: 【最终图片互动状态】
+		elif current_state == State.FINAL_IMAGES_INTERACTION:
+			# 互动由 Area2D 信号处理，这里不处理通用点击。
+			pass
+			
+func handle_click():
+	"""处理点击事件 (对应流程控制)"""
+	
+	# ----------------------------------------------------
+	# 【新增：从 IMAGES_INTERACTION 状态触发 Final Text】
+	# ----------------------------------------------------
+	if current_state == State.IMAGES_INTERACTION and final_text_ready:
+		# 玩家在图片界面（非图片Area2D处）点击屏幕任意处
+		print("DEBUG: Final Text triggered by general click.")
+		show_final_text_1()
+		return
+		
+	# ----------------------------------------------------
+	# 【优先级 1: INTRO 打字阶段的第二次点击（继续/跳过）】
+	# ----------------------------------------------------
+	if current_state == State.INTRO and intro_text.is_skipped:
+		# 第二次点击：跳过动画后，正式完成打字并进入下一流程
+		intro_text.finish_typing()
+		return
+	
+	# ----------------------------------------------------
+	# 【优先级 2: 状态机流程控制】
+	# ----------------------------------------------------
+	match current_state:
+		
+		State.WAITING_DIALOGUE_CLICK:
+			# 区分是 Intro Dialogue 还是 Final Text 1 的分段点击
+			if final_container.visible:
+				# 检查 Final Text 1 是否还有下一段
+				if current_final_text_index < final_text_dialogue_array.size():
+					_start_next_final_text_segment()
+				# 否则，流程结束，等待通用点击
+				# （注意：_start_next_final_text_segment() 的 else 块已将状态设置为 WAITING_CLICK）
+			else:
+				# 默认或 Intro Dialogue 分段继续
+				_start_next_dialogue_segment()
+			
+		State.WAITING_CLICK:
+			
+			# 1. 检查：是否应该从 FINAL TEXT 1 过渡到 FINAL TEXT 2
+			# 条件：Final Container 可见，并且 Intro 流程已走完 (意味着当前在 Final Text 1 流程后)
+			if final_container.visible and current_dialogue_index >= intro_dialogue_array.size() - 1:
+				print("DEBUG: Final Text 1 click detected. Calling show_final_text_2().")
+				show_final_text_2()
+				
+			# 2. 默认/初始：从 Intro 阶段过渡到图片揭示阶段 
+			# (只有在 Final Text 流程未开始且图片未揭示时才会执行)
+			elif not final_container.visible:
+				print("DEBUG: Click detected in WAITING_CLICK state. Calling reveal_images().")
+				reveal_images()
+			   
+			# 注意：旧的图片点击逻辑已被上面的 `final_text_ready` 逻辑取代，这里无需重复。
+			
+		_:
+			# 其他状态不处理通用点击
+			pass
