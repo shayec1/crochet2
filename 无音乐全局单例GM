@@ -1,0 +1,388 @@
+extends Node
+
+# ==================== 核心数据 ====================
+var stats = {
+	"O1": 0,	# 希望/外向 (Optimistic 1)
+	"O2": 0,	# 接纳/内稳 (Optimistic 2)
+	"P1": 0,	# 停滞/回避 (Pessimistic 1)
+	"P2": 0	# 厌世/自毁 (Pessimistic 2)
+}
+
+# 场景访问计数（用于version控制）
+var scene_visits = {
+	"yaki_bar": 0,
+	"friend_house": 0,
+	"seaside": 0,
+	"parents": 0,
+	"apartment": 0
+}
+
+var choice_count = 0	# 已做选择数
+const MAX_CHOICES = 5	# 最大选择数
+var forced_ending = null	# 强制结局标记
+
+# 历史记录（跨会话）
+var ending_history = {
+	"ending_O1": 0,
+	"ending_O2": 0,
+	"ending_P1": 0,
+	"ending_P2": 0
+}
+
+# 临时变量用于存储回调信息
+var _dialogue_callback_target: Object = null
+var _dialogue_callback_method: String = ""
+
+const SAVE_PATH = "user://game_save.dat"
+
+# ==================== 初始化 ====================
+func _ready():
+	load_game_data()
+
+# ==================== 场景管理 ====================
+func show_dialogue(text: String, target_node: Object, callback_func: String):
+	"""
+	在 GM 中显示对话，并在对话完成后调用场景的回调函数。
+	
+	:param text: 要显示的对话文本。
+	:param target_node: 对话结束后要调用函数的节点实例 (即 YakiBar 场景)。
+	:param callback_func: 对话结束后要调用的函数名 (即 "_on_choice_dialogue_finished")。
+	"""
+	
+	# 1. 存储回调信息
+	_dialogue_callback_target = target_node
+	_dialogue_callback_method = callback_func
+	
+	# 2. **在这里启动您的对话框逻辑。**
+	# 假设您有一个名为 $DialogueBox 的节点用于显示对话
+	# $DialogueBox.start_dialogue(text) 
+	
+	# 3. **将对话框的结束信号连接到 _on_internal_dialogue_finished**
+	# 确保当文本播放完毕（或用户点击跳过）时，触发这个内部回调。
+	# if not $DialogueBox.is_connected("dialogue_finished", _on_internal_dialogue_finished):
+	#    $DialogueBox.connect("dialogue_finished", _on_internal_dialogue_finished)
+	
+	# --------------------------------------------------------------------------
+	# *** 临时测试模拟：如果您没有对话框逻辑，可以暂时使用此行来立即测试选择流程 ***
+	#call_deferred("_on_internal_dialogue_finished")
+	# *** 请务必在集成真实对话框时删除上面这一行。 ***
+	# --------------------------------------------------------------------------
+
+func _on_internal_dialogue_finished():
+	"""
+	对话框结束时的内部回调，触发场景中存储的外部回调。
+	"""
+	
+	if is_instance_valid(_dialogue_callback_target) and _dialogue_callback_target.has_method(_dialogue_callback_method):
+		# 触发 YakiBar.gd 中的 _on_choice_dialogue_finished()
+		_dialogue_callback_target.call(_dialogue_callback_method)
+	else:
+		push_error("GM: Dialogue finished, but callback failed. Target invalid or method missing!")
+
+	# 清理回调信息
+	_dialogue_callback_target = null
+	_dialogue_callback_method = ""
+	
+func get_scene_version(scene_name: String) -> int:
+	"""
+	获取场景的【当前】版本号（基于已访问次数）。
+	0 次访问 -> V1, 1 次访问 -> V2, 2+ 次访问 -> V3
+	"""
+	var visits = scene_visits.get(scene_name, 0)
+	# 限制版本号最大值 (V3 对应索引 2)
+	var version_index = min(visits, 2) 
+	return version_index + 1 # 返回 V1, V2, 或 V3
+
+func visit_scene(scene_name: String):
+	"""
+	记录场景访问（在场景加载时由 SceneBase.gd 调用）。
+	这个函数只在场景 _ready() 时被调用一次。
+	"""
+	scene_visits[scene_name] = scene_visits.get(scene_name, 0) + 1
+	print("[GM] Visiting %s. Total visits: %d" % [scene_name, scene_visits[scene_name]])
+
+
+func get_scene_path(scene_name: String) -> String:
+	"""
+	【核心修改】获取场景文件路径。
+	返回通用场景文件路径 (例如: res://scenes/yaki_bar.tscn)。
+	版本加载由 SceneBase.gd 负责。
+	"""
+	var scene_map = {
+		"yaki_bar": "res://Scenes/yaki_bar.tscn",
+		"friend_house": "res://Scenes/friend_house.tscn",
+		"seaside": "res://Scenes/seaside.tscn",
+		"parents": "res://Scenes/parents.tscn",
+		"apartment": "res://Scenes/apartment.tscn"
+	}
+	
+	if scene_map.has(scene_name):
+		return scene_map[scene_name]
+	
+	push_error("GameManager:get_scene_path() - Unknown scene name: " + scene_name)
+	return ""
+
+# ==================== 选择处理 ====================
+func make_choice(choice_data: Dictionary):
+	"""处理玩家选择并决定下一步（加载场景或触发结局）"""
+	# 应用数值效果
+	if choice_data.has("effects"):
+		for stat in choice_data.effects:
+			if stats.has(stat):
+				stats[stat] += choice_data.effects[stat]
+				print("[Stats] %s: %+d (Total: %d)" % [stat, choice_data.effects[stat], stats[stat]])
+	
+	# 检查强制结局
+	if choice_data.has("force_ending") and choice_data.force_ending != null:
+		forced_ending = choice_data.force_ending
+		print("[Force Ending] Set to: %s" % forced_ending)
+	
+	# 增加选择计数
+	choice_count += 1
+	print("[Choice Count] %d/%d" % [choice_count, MAX_CHOICES])
+	
+	# 决定下一步
+	if choice_data.has("next_scene"):
+		if choice_data.next_scene == "ending" or choice_count >= MAX_CHOICES:
+			# 触发结局
+			trigger_ending()
+		else:
+			# 跳转到下一个场景
+			load_next_scene(choice_data.next_scene)
+
+func load_next_scene(scene_name: String):
+	"""
+	加载下一个场景。
+	【核心修改】这个函数不再调用 visit_scene()。
+	"""
+	var scene_path = get_scene_path(scene_name)
+	
+	if scene_path != "":
+		print("[Scene Load] Loading generic path: %s" % scene_path)
+		get_tree().change_scene_to_file(scene_path)
+	else:
+		push_error("[Error] Unknown scene name in load_next_scene: %s" % scene_name)
+
+# ==================== 场景跳转（SceneBase兼容接口）====================
+func change_scene(scene_name: String):
+	"""
+	跳转到指定场景（SceneBase使用的接口）
+	调用 load_next_scene 实现实际跳转
+	"""
+	print("[GM] change_scene() called for: %s" % scene_name)
+	load_next_scene(scene_name)
+	
+# ==================== 结局判定算法 (保持原样) ====================
+func determine_ending() -> String:
+	"""智能结局判定算法"""
+	if forced_ending != null:
+		return forced_ending
+	
+	var total_abs = abs(stats.O1) + abs(stats.O2) + abs(stats.P1) + abs(stats.P2)
+	
+	if total_abs < 0.001:
+		return get_rarest_ending()
+	
+	# 确保所有计算都使用 float
+	var raw_weights = {
+		"ending_O1": max(0.0, float(stats.O1)),
+		"ending_O2": max(0.0, float(stats.O2)),
+		"ending_P1": max(0.0, float(stats.P1)),
+		"ending_P2": max(0.0, float(stats.P2))
+	}
+	
+	var total = 0.0
+	for val in raw_weights.values():
+		total += val
+	
+	var weights = {}
+	if total > 0.001:
+		for key in raw_weights:
+			weights[key] = raw_weights[key] / total
+	else:
+		return get_rarest_ending()
+	
+	weights = apply_balancing(weights)
+	
+	var max_weight = -1.0
+	var dominant_ending = ""
+	
+	for ending in weights:
+		if weights[ending] > max_weight:
+			max_weight = weights[ending]
+			dominant_ending = ending
+	
+	var threshold = 0.15
+	var close_endings = []
+	
+	for ending in weights:
+		if weights[ending] >= max_weight - threshold:
+			close_endings.append({
+				"id": ending,
+				"weight": weights[ending]
+			})
+	
+	if close_endings.size() > 1:
+		var selected = weighted_random_choice(close_endings)
+		print("[Ending] Multiple close endings, randomly selected: %s" % selected)
+		return selected
+	
+	print("[Ending] Dominant: %s (weight: %.2f)" % [dominant_ending, max_weight])
+	return dominant_ending
+
+func apply_balancing(weights: Dictionary) -> Dictionary:
+	"""根据历史记录调整权重"""
+	var max_count = 0
+	var min_count = 999999
+	
+	for ending in ending_history:
+		max_count = max(max_count, ending_history[ending])
+		min_count = min(min_count, ending_history[ending])
+	
+	# 如果所有结局都一样，或者只有一个结局，不调整
+	if max_count - min_count <= 1:
+		return weights
+	
+	var balanced_weights = {}
+	var avg_count = (float(max_count) + float(min_count)) / 2.0
+	
+	for ending in weights:
+		var count = float(ending_history.get(ending, 0))
+		var boost = 1.0
+		
+		# 历史少的增加30%，历史多的减少20%
+		if count < avg_count:
+			boost = 1.0 + 0.30 * (avg_count - count) / max(avg_count, 1.0)
+		elif count > avg_count:
+			boost = 1.0 - 0.20 * (count - avg_count) / max(avg_count, 1.0)
+		
+		balanced_weights[ending] = weights[ending] * boost
+	
+	# 重新归一化
+	var total = 0.0
+	for val in balanced_weights.values():
+		total += val
+	
+	if total > 0.001:
+		for ending in balanced_weights:
+			balanced_weights[ending] /= total
+	
+	return balanced_weights
+
+func weighted_random_choice(options: Array) -> String:
+	"""加权随机选择"""
+	var total_weight = 0.0
+	for opt in options:
+		total_weight += opt.weight
+	
+	var rand_val = randf() * total_weight
+	var cumulative = 0.0
+	
+	for opt in options:
+		cumulative += opt.weight
+		if rand_val <= cumulative:
+			return opt.id
+	
+	# Fallback
+	return options[0].id
+
+func get_rarest_ending() -> String:
+	"""获取历史上触发最少的结局"""
+	var min_count = 999999
+	var rare_endings = []
+	
+	for ending in ending_history:
+		if ending_history[ending] < min_count:
+			min_count = ending_history[ending]
+			rare_endings = [ending]
+		elif ending_history[ending] == min_count:
+			rare_endings.append(ending)
+	
+	if rare_endings.size() > 0:
+		return rare_endings[randi() % rare_endings.size()]
+	return "ending_O1" # 默认 O1
+
+# ==================== 结局触发 ====================
+	
+func trigger_ending(force_ending: String = ""):
+	var ending_id = ""
+	
+	# ✅ 检查强制结局
+	if force_ending != "" and ending_history.has(force_ending):
+		ending_id = force_ending
+		print("[Force Ending] Using forced ending: %s" % ending_id)
+	else:
+		ending_id = determine_ending()
+		print("[Auto Ending] Determined ending: %s" % ending_id)
+		
+	ending_history[ending_id] = ending_history.get(ending_id, 0) + 1
+	save_game_data()
+	
+	print("\n=== GAME END ===")
+	print("Final Stats:", stats)
+	print("Ending: %s" % ending_id)
+	
+	var ending_scene_map = {
+		"ending_O1": "res://Scenes/ending_01.tscn",  # ← 注意路径
+		"ending_O2": "res://Scenes/ending_02.tscn",
+		"ending_P1": "res://Scenes/ending_03.tscn",
+		"ending_P2": "res://Scenes/ending_04.tscn"
+	}
+	
+	if ending_scene_map.has(ending_id):
+		get_tree().change_scene_to_file(ending_scene_map[ending_id])
+	else:
+		push_error("[Error] Unknown ending: %s" % ending_id)
+
+# ==================== 数据持久化 (Godot 4 FileAccess) ====================
+func save_game_data():
+	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)	
+	if file != null:
+		var data_to_save = { "ending_history": ending_history }
+		var buffer = var_to_bytes(data_to_save)
+		file.store_buffer(buffer)
+		file = null # 关闭文件
+	else:
+		push_error("Error opening file for saving: " + SAVE_PATH)
+
+func load_game_data():
+	if FileAccess.file_exists(SAVE_PATH):
+		var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
+		if file != null:
+			var buffer = file.get_buffer(file.get_length())
+			var data = bytes_to_var(buffer)
+			file = null # 关闭文件
+			
+			if typeof(data) == TYPE_DICTIONARY and data.has("ending_history"):
+				ending_history = data.ending_history
+		else:
+			push_error("Error opening file for loading: " + SAVE_PATH)
+
+func reset_game():
+	"""重置游戏状态（开始新游戏）"""
+	stats = { "O1": 0, "O2": 0, "P1": 0, "P2": 0 }
+	scene_visits = {
+		"yaki_bar": 0, "friend_house": 0, "seaside": 0, "parents": 0, "apartment": 0
+	}
+	choice_count = 0
+	forced_ending = null
+	print("[Game] Reset complete")
+
+func reset_history():
+	"""重置历史记录（调试用）"""
+	ending_history = { "ending_O1": 0, "ending_O2": 0, "ending_P1": 0, "ending_P2": 0 }
+	save_game_data()
+	print("[History] Reset complete")
+
+# ==================== 工具函数 ====================
+func get_remaining_choices() -> int:
+	"""获取剩余选择数"""
+	return MAX_CHOICES - choice_count
+
+func print_stats():
+	"""打印当前统计信息"""
+	print("\n=== Current Stats ===")
+	for stat in stats:
+		print("%s: %d" % [stat, stats[stat]])
+	print("Choices: %d/%d" % [choice_count, MAX_CHOICES])
+	print("Scene Visits: %s" % str(scene_visits))
